@@ -71,7 +71,8 @@ y = vcat(
 )
 
 # Get the full data
-Xf = leftjoin([rename(DataFrame(SimpleSDMPredictor(provider, layer=i; opts..., boundingbox...)), :value => layers(provider)[i]) for i in [1,8]]...; on=[:longitude, :latitude])
+dfs = [rename(DataFrame(SimpleSDMPredictor(provider, layer=i; opts..., boundingbox...)), :value => layers(provider)[i]) for i in 1:19]
+Xf = dropmissing(reduce((x,y) -> leftjoin(x,y; on=[:latitude, :longitude]), dfs))
 
 # Get the training data
 Xy = dropmissing(leftjoin(y, Xf, on=[:longitude, :latitude]))
