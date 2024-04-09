@@ -37,16 +37,23 @@ fit!(conf_mach, rows=train)
 
 # Make the uncertainty prediction
 conformal = similar(temperature)
+nopredict = similar(temperature)
 conf_pred = predict(conf_mach, select(Xf, Not([:longitude, :latitude])))
 conf_val = [ismissing(p) ? nothing : (pdf(p, true) == 0 ? nothing : pdf(p, true)) for p in conf_pred]
+conf_false = [ismissing(p) ? nothing : (pdf(p, false) == 0 ? nothing : pdf(p, false)) for p in conf_pred]
 
 conformal.grid[findall(!isnothing, conformal.grid)] .= conf_val
+nopredict.grid[findall(!isnothing, nopredict.grid)] .= conf_false
 
 f = Figure()
-ax = Axis(f[1,1])
+ax = Axis(f[2,1])
 heatmap!(ax, pred, colormap=[:lightgrey, :lightgrey])
 hm = heatmap!(ax, conformal, colormap=:navia, colorrange=(0,1))
-Colorbar(f[1,2], hm)
+Colorbar(f[1,1], hm; vertical=false)
+ax2 = Axis(f[2,2])
+heatmap!(ax2, pred, colormap=[:lightgrey, :lightgrey])
+heatmap!(ax2, conformal, colormap=[:black, :black])
+heatmap!(ax2, mask((conformal .> 0), (nopredict .> 0)), colormap=[:grey, :grey])
 current_figure()
 
 #pres = findall(isequal(true), Xy.presence)
