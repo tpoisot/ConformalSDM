@@ -57,7 +57,8 @@ heatmap!(ax2, mask((conformal .> 0), (nopredict .> 0)), colormap=[:grey, :grey])
 current_figure()
 
 sureat = similar(temperature)
-for α in reverse(LinRange(0.0, 0.1, 50))
+predat = similar(temperature)
+for α in reverse(LinRange(0.0, 0.05, 20))
     @info α
     conf_model = conformal_model(tree; coverage=1-α)
     conf_mach = machine(conf_model, X, y)
@@ -67,18 +68,24 @@ for α in reverse(LinRange(0.0, 0.1, 50))
     conf_false = [ismissing(p) ? nothing : (pdf(p, false) == 0 ? nothing : pdf(p, false)) for p in conf_pred]
     pos = findall((.!isnothing.(conf_true)) .& (isnothing.(conf_false)))
     sureat.grid[findall(!isnothing, sureat.grid)[pos]] .= 1-α
+    pos = findall((.!isnothing.(conf_true)).&(iszero.(values(predat))))
+    predat.grid[findall(!isnothing, predat.grid)[pos]] .= 1-α
 end
 
 replace!(sureat, 0.0 => nothing)
+replace!(predat, 0.0 => nothing)
 
 f = Figure()
 ax = Axis(f[2,1])
+ax2 = Axis(f[2,2])
 heatmap!(ax, pred, colormap=[:lightgrey, :lightgrey])
-hm = heatmap!(ax, sureat, colormap=:lipari, colorrange=(0.8,1.0))
+heatmap!(ax2, pred, colormap=[:lightgrey, :lightgrey])
+hm = heatmap!(ax, sureat, colormap=:lipari, colorrange=(0.9,1.0))
 Colorbar(f[1,1], hm; vertical=false)
+heatmap!(ax2, predat, colormap=:lipari, colorrange=(0.9,1.0))
 current_figure()
 
-#pres = findall(isequal(true), Xy.presence)
+#pres = findall(!isequal(true), Xy.presence)
 #scatter!(Xy.longitude[pres], Xy.latitude[pres])
 
 #=
