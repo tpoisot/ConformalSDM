@@ -19,7 +19,7 @@ occ = [
     for record in sightings
     if
     (record.classification == "Class A") &
-    (bigdate(record.timestamp) >= Dates.Year(2000))
+    (bigdate(record.timestamp) >= Dates.Year(1900))
 ]
 filter!(r -> -90 <= r[2] <= 90, occ)
 filter!(r -> -180 <= r[1] <= 180, occ)

@@ -45,7 +45,7 @@ conformal.grid[findall(!isnothing, conformal.grid)] .= conf_val
 f = Figure()
 ax = Axis(f[1,1])
 heatmap!(ax, pred, colormap=[:lightgrey, :lightgrey])
-hm = heatmap!(ax, conformal, colormap=:lipari, colorrange=(0,1))
+hm = heatmap!(ax, conformal, colormap=:navia, colorrange=(0,1))
 Colorbar(f[1,2], hm)
 current_figure()
 
