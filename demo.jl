@@ -5,7 +5,6 @@ using ConformalPrediction
 using Shapley
 using CairoMakie
 CairoMakie.activate!(; px_per_unit = 2)
-import ColorBlendModes
 
 # Split the data to train a model
 schema(Xy)
@@ -16,7 +15,7 @@ y, X = unpack(select(Xy, Not([:longitude, :latitude])), ==(:presence); rng=420)
 models(matching(X,y))
 
 Tree = @load EvoTreeClassifier pkg=EvoTrees
-tree = Tree()
+tree = Tree(nbins=128, max_depth=4)
 
 # Initial classifier
 mach = machine(tree, X, y)
@@ -28,66 +27,45 @@ matthews_correlation(yhat, y[test])
 # Get some prediction going
 pred = similar(temperature)
 pred.grid[findall(!isnothing, pred.grid)] .= pdf.(predict(mach, select(Xf, Not([:longitude, :latitude]))), true)
-heatmap(pred, colormap=:lipari)
+heatmap(pred, colormap=:navia)
 
-# Conformal prediction
-conf_model = conformal_model(tree; coverage=1.0)
+# Conformal prediction with changing coverage
+α = 0.05
+conf_model = conformal_model(tree; coverage=1-α)
 conf_mach = machine(conf_model, X, y)
 fit!(conf_mach, rows=train)
 
 # Make the uncertainty prediction
 conformal = similar(temperature)
-conformal.grid[findall(!isnothing, conformal.grid)] .= pdf.(predict(conf_mach, select(Xf, Not([:longitude, :latitude]))), true)
-heatmap(conformal, colormap=:lipari)
+conf_pred = predict(conf_mach, select(Xf, Not([:longitude, :latitude])))
+conf_val = [ismissing(p) ? nothing : (pdf(p, true) == 0 ? nothing : pdf(p, true)) for p in conf_pred]
 
-# Bivariate plot
-n_stops = 5
-rscl = 0.0:0.01:1.0
+conformal.grid[findall(!isnothing, conformal.grid)] .= conf_val
 
-r1, r2 = pred, conformal
-
-l1 = copy(r1)#rescale(r1, rscl);
-l2 = copy(r2)#rescale(r2, rscl);
-
-d1 = Int64.(round.((n_stops - 1) .* l1; digits = 0)) .+ 1
-d2 = Int64.(round.((n_stops - 1) .* l2; digits = 0)) .+ 1
-
-function bivariator(n1, n2)
-    function bv(v1, v2)
-        return n2 * (v2 - 1) + v1
-    end
-    return bv
-end
-
-b = bivariator(n_stops, n_stops).(d1, d2)
-sort(unique(values(b)))
-heatmap(b; colormap = :managua, colorrange = (1, n_stops * n_stops))
-
-p0 = colorant"#e8e8e8ff"
-p1 = colorant"#6c83b5ff"
-p2 = colorant"#73ae80ff"
-cm1 = LinRange(p0, p1, n_stops)
-cm2 = LinRange(p0, p2, n_stops)
-cmat = ColorBlendModes.BlendMultiply.(cm1, cm2')
-cmap = vec(cmat)
-
-f = Figure(; resolution = (700, 700))
-
-m_biv = Axis(f[1, 1]; aspect = DataAspect())
-heatmap!(m_biv, b; colormap = cmap, colorrange = (1, n_stops * n_stops))
-
-m_v2 = Axis(f[2, 1]; aspect = DataAspect())
-heatmap!(m_v2, d2; colormap = cm2, colorrange = (1, n_stops))
-
-m_v1 = Axis(f[1, 2]; aspect = DataAspect())
-heatmap!(m_v1, d1; colormap = cm1, colorrange = (1, n_stops))
-
-m_leg = Axis(f[2, 2]; aspect = 1, xlabel = "Prediction", ylabel = "Certainty")
-x = LinRange(minimum(r1), maximum(r1), n_stops)
-y = LinRange(minimum(r2), maximum(r2), n_stops)
-heatmap!(m_leg, x, y, reshape(1:(n_stops * n_stops), (n_stops, n_stops)); colormap = cmap)
-
+f = Figure()
+ax = Axis(f[1,1])
+heatmap!(ax, pred, colormap=[:lightgrey, :lightgrey])
+hm = heatmap!(ax, conformal, colormap=:lipari, colorrange=(0,1))
+Colorbar(f[1,2], hm)
 current_figure()
 
+#pres = findall(isequal(true), Xy.presence)
+#scatter!(Xy.longitude[pres], Xy.latitude[pres])
+
+#=
 # Get the Shapley values
-#B1 = shapley(x -> predict(mach, x), Shapley.MonteCarlo(128), Xf, :BIO1)
+idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
+B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(16), Xf[idx,:], :BIO1)
+
+expl = similar(conformal)
+expl.grid[findall(!isnothing, expl.grid)] .= pdf.(B1, true)
+
+f = Figure()
+ax = Axis(f[1,1])
+heatmap!(ax, pred, colormap=[:lightgrey, :lightgrey])
+hm = heatmap!(ax, expl, colormap=:managua, colorrange=(-0.3, 0.3))
+Colorbar(f[1,2], hm)
+current_figure()
+
+scatter(Xf.BIO1[idx], values(expl))
+=#
