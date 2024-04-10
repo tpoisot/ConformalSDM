@@ -60,8 +60,13 @@ current_figure()
 #pres = findall(!isequal(true), Xy.presence)
 #scatter!(Xy.longitude[pres], Xy.latitude[pres])
 
+VAR = :BIO8
+
 idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
 B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(ComputationalResources.CPUThreads(), 16), Xf[idx,:], :BIO8)
+
+expvar = similar(pred)
+expvar.grid[findall(!isnothing, expvar.grid)] .= Xf[:,VAR]
 
 expl = similar(conformal)
 expl.grid[findall(!isnothing, expl.grid)] .= pdf.(B1, true)
@@ -90,6 +95,9 @@ colgap!(gl, 10)
 rowgap!(gl, 0)
 colsize!(f.layout, 1, Relative(0.7))
 current_figure()
+
+# TODO Make partial responses for the plot of sure/unsure variables
+# hexbin(mask(unsure_mask, expvar), mask(unsure_mask, expl))
 
 #=
 # Get the Shapley values
