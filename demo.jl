@@ -2,8 +2,8 @@ include("_getdata.jl")
 
 using MLJ
 using ConformalPrediction
-import ComputationalResources
 using Shapley
+using Shapley.ComputationalResources
 using CairoMakie
 CairoMakie.activate!(; px_per_unit=2)
 
@@ -73,7 +73,7 @@ current_figure()
 #current_figure()
 
 idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
-B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(ComputationalResources.CPUThreads(32), 32), Xf[idx, :])
+B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(CPUThreads(), 32), Xf[idx, :])
 
 VAR = :BIO1
 expvar = similar(pred)
