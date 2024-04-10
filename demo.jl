@@ -61,43 +61,49 @@ current_figure()
 #scatter!(Xy.longitude[pres], Xy.latitude[pres])
 
 VAR = :BIO8
-
 idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
-B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(ComputationalResources.CPUThreads(), 16), Xf[idx,:], :BIO8)
+B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(ComputationalResources.CPUThreads(32), 32), Xf[idx,:])
 
 expvar = similar(pred)
 expvar.grid[findall(!isnothing, expvar.grid)] .= Xf[:,VAR]
 
 expl = similar(conformal)
-expl.grid[findall(!isnothing, expl.grid)] .= pdf.(B1, true)
+expl.grid[findall(!isnothing, expl.grid)] .= pdf.(B1[VAR], true)
 
 # Masks for the Shapley values
 unsure_mask = mask((conformal .> 0), (nopredict .> 0))
 sure_mask = conformal .> 0
 sure_mask.grid[findall(!isnothing, nopredict.grid)] .= nothing
 
+frange = (-0.3, 0.3)
 f = Figure()
 ax = Axis(f[2,1])
 gl = f[2,2] = GridLayout()
-hs = Axis(gl[1,1], xaxisposition=:top)
-hu = Axis(gl[2,1], yreversed=true)
+hs = Axis(gl[1,2], xaxisposition=:top)
+hu = Axis(gl[2,2])
+es = Axis(gl[1,1], xaxisposition=:top)
+eu = Axis(gl[2,1])
 heatmap!(ax, pred, colormap=[:lightgrey, :lightgrey])
-hm = heatmap!(ax, expl, colormap=:managua, colorrange=(-.2,.2))
+hm = heatmap!(ax, expl, colormap=:managua, colorrange=frange)
 Colorbar(f[1,1], hm; vertical=false)
-hist!(hs, mask(sure_mask, expl), color=:black, bins=40)
-hist!(hu, mask(unsure_mask, expl), color=:grey, bins=40, flip=false)
-for hax in [hs, hu]
-    hideydecorations!(hax)
+hist!(hs, mask(sure_mask, expl), color=:black, bins=40, direction=:x)
+hist!(hu, mask(unsure_mask, expl), color=:grey, bins=40, direction=:x)
+scatter!(es, mask(sure_mask, expvar), mask(sure_mask, expl), color=:black)
+scatter!(eu, mask(unsure_mask, expvar), mask(unsure_mask, expl), color=:grey)
+for hax in [es, eu, hs, hu]
     tightlimits!(hax)
-    xlims!(hax, -0.2, 0.2)
+    ylims!(hax, frange...)
 end
-colgap!(gl, 10)
+hidedecorations!(hs)
+hidedecorations!(hu)
+hidespines!(hs)
+hidespines!(hu)
+linkxaxes!(es, eu)
+colgap!(gl, 0)
 rowgap!(gl, 0)
-colsize!(f.layout, 1, Relative(0.7))
+colsize!(f.layout, 1, Relative(0.45))
+colsize!(gl, 1, Relative(0.85))
 current_figure()
-
-# TODO Make partial responses for the plot of sure/unsure variables
-# hexbin(mask(unsure_mask, expvar), mask(unsure_mask, expl))
 
 #=
 # Get the Shapley values
