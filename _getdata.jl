@@ -26,7 +26,7 @@ filter!(r -> -180 <= r[1] <= 180, occ)
 
 # Spatial filter
 filter!(r -> 30 <= r[2] <= 52, occ)
-filter!(r -> -130 <= r[1] <= -110, occ)
+filter!(r -> -130 <= r[1] <= -100, occ)
 
 # Bounding box
 boundingbox = (
@@ -55,7 +55,7 @@ possible_background = pseudoabsencemask(DistanceToEvent, presence_layer) * cells
 
 # Absence layer
 absence_layer = backgroundpoints(
-    (x -> x^1.01).(possible_background),
+    (x -> x^1.1).(possible_background),
     3sum(presence_layer);
     replace=false
 )
