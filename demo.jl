@@ -75,7 +75,7 @@ current_figure()
 idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
 B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(CPUThreads(), 32), Xf[idx, :])
 
-VAR = :BIO1
+VAR = :BIO4
 expvar = similar(pred)
 expvar.grid[findall(!isnothing, expvar.grid)] .= Xf[:, VAR]
 
