@@ -2,6 +2,7 @@ include("_getdata.jl")
 
 using MLJ
 using ConformalPrediction
+import ComputationalResources
 using Shapley
 using CairoMakie
 CairoMakie.activate!(; px_per_unit = 2)
@@ -56,30 +57,39 @@ heatmap!(ax2, conformal, colormap=[:black, :black])
 heatmap!(ax2, mask((conformal .> 0), (nopredict .> 0)), colormap=[:grey, :grey])
 current_figure()
 
-sureat = similar(temperature)
-for α in reverse(LinRange(0.0001, 0.1, 50))
-    @info α
-    conf_model = conformal_model(tree; coverage=1-α)
-    conf_mach = machine(conf_model, X, y)
-    fit!(conf_mach, rows=train)
-    conf_pred = predict(conf_mach, select(Xf, Not([:longitude, :latitude])))
-    conf_true = [ismissing(p) ? nothing : (pdf(p, true) == 0 ? nothing : pdf(p, true)) for p in conf_pred]
-    conf_false = [ismissing(p) ? nothing : (pdf(p, false) == 0 ? nothing : pdf(p, false)) for p in conf_pred]
-    pos = findall((.!isnothing.(conf_true)) .& (isnothing.(conf_false)))
-    sureat.grid[findall(!isnothing, sureat.grid)[pos]] .= 1-α
-end
+#pres = findall(!isequal(true), Xy.presence)
+#scatter!(Xy.longitude[pres], Xy.latitude[pres])
 
-replace!(sureat, 0.0 => nothing)
+idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
+B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(ComputationalResources.CPUThreads(), 16), Xf[idx,:], :BIO8)
+
+expl = similar(conformal)
+expl.grid[findall(!isnothing, expl.grid)] .= pdf.(B1, true)
+
+# Masks for the Shapley values
+unsure_mask = mask((conformal .> 0), (nopredict .> 0))
+sure_mask = conformal .> 0
+sure_mask.grid[findall(!isnothing, nopredict.grid)] .= nothing
 
 f = Figure()
 ax = Axis(f[2,1])
+gl = f[2,2] = GridLayout()
+hs = Axis(gl[1,1], xaxisposition=:top)
+hu = Axis(gl[2,1], yreversed=true)
 heatmap!(ax, pred, colormap=[:lightgrey, :lightgrey])
-hm = heatmap!(ax, sureat, colormap=:lipari, colorrange=(0.9,1.0))
+hm = heatmap!(ax, expl, colormap=:managua, colorrange=(-.2,.2))
 Colorbar(f[1,1], hm; vertical=false)
+hist!(hs, mask(sure_mask, expl), color=:black, bins=40)
+hist!(hu, mask(unsure_mask, expl), color=:grey, bins=40, flip=false)
+for hax in [hs, hu]
+    hideydecorations!(hax)
+    tightlimits!(hax)
+    xlims!(hax, -0.2, 0.2)
+end
+colgap!(gl, 10)
+rowgap!(gl, 0)
+colsize!(f.layout, 1, Relative(0.7))
 current_figure()
-
-#pres = findall(!isequal(true), Xy.presence)
-#scatter!(Xy.longitude[pres], Xy.latitude[pres])
 
 #=
 # Get the Shapley values
