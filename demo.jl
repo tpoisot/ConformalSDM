@@ -72,38 +72,23 @@ current_figure()
 #scatter!(Xy.longitude[pres], Xy.latitude[pres], markersize=2, color=:teal)
 #current_figure()
 
+include("_shapley.jl")
 idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
 prf = (x) -> predict(conf_mach, x)
-v2 = shap_list_points(prf, select(Xf, Not([:longitude, :latitude])), X, idx, 19, 100)
+@time v19 = shap_list_points(prf, select(Xf, Not([:longitude, :latitude])), X, idx, 19, 50)
 
-
-#=
-# Threaded version of Shapley values
-
-ϕ = []
-Threads.@threads for vidx in 3:21
-    v = Symbol(names(Xf)[vidx])
-    thispred = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(100), Xf[idx,:], v)
-    push!(ϕ, v => thispred)
-end
-
-ϕ = Dict(ϕ)
-
-Dict(zip(keys(ϕ), mean.([abs.(pdf.(ϕ[v], true)) for v in keys(ϕ)])))
-
-VAR = :BIO19
 expvar = similar(pred)
-expvar.grid[findall(!isnothing, expvar.grid)] .= Xf[:, VAR]
+expvar.grid[findall(!isnothing, expvar.grid)] .= Xf[:, 3]
 
 expl = similar(conformal)
-expl.grid[findall(!isnothing, expl.grid)] .= pdf.(ϕ[VAR], true)
+expl.grid[findall(!isnothing, expl.grid)] .= pdf.(v19, true)
 
 # Masks for the Shapley values
 unsure_mask = mask((conformal .> 0), (nopredict .> 0))
 sure_mask = conformal .> 0
 sure_mask.grid[findall(!isnothing, nopredict.grid)] .= nothing
 
-frange = (-0.4, 0.4)
+frange = (-0.1, 0.1)
 f = Figure()
 ax = Axis(f[2, 1])
 gl = f[2, 2] = GridLayout()

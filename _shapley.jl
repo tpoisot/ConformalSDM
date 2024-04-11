@@ -34,8 +34,12 @@ function shap_list_points(f, X, Z, i, j, n)
     p0 = shap_one_point(f, X, Z, first(i), j, n)
     vals = Vector{typeof(p0)}(undef, length(i))
     vals[begin] = p0
-    Threads.@threads for x in 2:length(i)
-        vals[x] = shap_one_point(f, X, Z, i[x], j, n))
+    chunks = ceil.(Int, LinRange(1, length(i), Threads.nthreads()+1))
+    Threads.@threads for thr in 1:Threads.nthreads()
+        bg, nd = chunks[thr]+1, chunks[thr+1]
+        for smpl in bg:nd
+            vals[smpl] = shap_one_point(f, X, Z, i[smpl], j, n)
+        end
     end
     return vals
 end
