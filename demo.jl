@@ -73,14 +73,30 @@ current_figure()
 #current_figure()
 
 idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
-B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(CPUThreads(), 32), Xf[idx, :])
+prf = (x) -> predict(conf_mach, x)
+v2 = shap_list_points(prf, select(Xf, Not([:longitude, :latitude])), X, idx, 19, 100)
 
-VAR = :BIO4
+
+#=
+# Threaded version of Shapley values
+
+ϕ = []
+Threads.@threads for vidx in 3:21
+    v = Symbol(names(Xf)[vidx])
+    thispred = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(100), Xf[idx,:], v)
+    push!(ϕ, v => thispred)
+end
+
+ϕ = Dict(ϕ)
+
+Dict(zip(keys(ϕ), mean.([abs.(pdf.(ϕ[v], true)) for v in keys(ϕ)])))
+
+VAR = :BIO19
 expvar = similar(pred)
 expvar.grid[findall(!isnothing, expvar.grid)] .= Xf[:, VAR]
 
 expl = similar(conformal)
-expl.grid[findall(!isnothing, expl.grid)] .= pdf.(B1[VAR], true)
+expl.grid[findall(!isnothing, expl.grid)] .= pdf.(ϕ[VAR], true)
 
 # Masks for the Shapley values
 unsure_mask = mask((conformal .> 0), (nopredict .> 0))
@@ -134,4 +150,5 @@ Colorbar(f[1,2], hm)
 current_figure()
 
 scatter(Xf.BIO1[idx], values(expl))
+=#
 =#
