@@ -78,7 +78,7 @@ prf = (x) -> predict(conf_mach, x)
 @time v19 = shap_list_points(prf, select(Xf, Not([:longitude, :latitude])), X, idx, 19, 50)
 
 expvar = similar(pred)
-expvar.grid[findall(!isnothing, expvar.grid)] .= Xf[:, 3]
+expvar.grid[findall(!isnothing, expvar.grid)] .= Xf[:, 21]
 
 expl = similar(conformal)
 expl.grid[findall(!isnothing, expl.grid)] .= pdf.(v19, true)
@@ -88,7 +88,7 @@ unsure_mask = mask((conformal .> 0), (nopredict .> 0))
 sure_mask = conformal .> 0
 sure_mask.grid[findall(!isnothing, nopredict.grid)] .= nothing
 
-frange = (-0.1, 0.1)
+frange = (-0.6, 0.6)
 f = Figure()
 ax = Axis(f[2, 1])
 gl = f[2, 2] = GridLayout()
@@ -101,8 +101,8 @@ hm = heatmap!(ax, expl, colormap=:managua, colorrange=frange)
 Colorbar(f[1, 1], hm; vertical=false)
 hist!(hs, mask(sure_mask, expl), color=:black, bins=40, direction=:x)
 hist!(hu, mask(unsure_mask, expl), color=:grey, bins=40, direction=:x)
-scatter!(es, mask(sure_mask, expvar), mask(sure_mask, expl), color=:black)
-scatter!(eu, mask(unsure_mask, expvar), mask(unsure_mask, expl), color=:grey)
+scatter!(es, mask(sure_mask, expvar), mask(sure_mask, expl), color=:black, markersize=2, transparency=0.5)
+scatter!(eu, mask(unsure_mask, expvar), mask(unsure_mask, expl), color=:grey, markersize=2, transparency=0.5)
 for hax in [es, eu, hs, hu]
     tightlimits!(hax)
     ylims!(hax, frange...)
@@ -118,22 +118,3 @@ colsize!(f.layout, 1, Relative(0.45))
 rowsize!(f.layout, 1, Relative(0.01))
 colsize!(gl, 1, Relative(0.85))
 current_figure()
-
-#=
-# Get the Shapley values
-idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
-B1 = shapley(x -> predict(conf_mach, x), Shapley.MonteCarlo(16), Xf[idx,:], :BIO1)
-
-expl = similar(conformal)
-expl.grid[findall(!isnothing, expl.grid)] .= pdf.(B1, true)
-
-f = Figure()
-ax = Axis(f[1,1])
-heatmap!(ax, pred, colormap=[:lightgrey, :lightgrey])
-hm = heatmap!(ax, expl, colormap=:managua, colorrange=(-0.3, 0.3))
-Colorbar(f[1,2], hm)
-current_figure()
-
-scatter(Xf.BIO1[idx], values(expl))
-=#
-=#
