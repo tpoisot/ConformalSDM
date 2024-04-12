@@ -17,20 +17,17 @@ Tree = @load EvoTreeClassifier pkg = EvoTrees
 tree = Tree(nbins=128, max_depth=6)
 
 # Forward variable selection for the BRT
-# This uses MCC on a 70/30 split
 pool = collect(1:size(X, 2))
 retained_variables = eltype(pool)[]
 mcc_to_beat = -Inf
 improved = true
-train, test = partition(1:size(X, 1), 0.7; shuffle=true)
 while improved
     improved = false
     mcc_this_round = zeros(Float64, length(pool))
     for (i,v) in enumerate(pool)
         thissel = [retained_variables..., pool[i]]
-        thismach = machine(tree, X[train,thissel], y[train])
-        fit!(thismach; verbosity=0)
-        mcc_this_round[i] = matthews_correlation(predict_mode(thismach, X[test,thissel]), y[test])
+        ev = evaluate(tree, X[:,thissel], y; verbosity=0,resampling=CV(nfolds=10, shuffle=true, rng=12345),measures=[matthews_correlation])
+        mcc_this_round[i] = first(ev.measurement)
         @info "\t Adding variable $(pool[i]) - MCC: $(mcc_this_round[i])"
     end
     if maximum(mcc_this_round) >= mcc_to_beat
@@ -109,7 +106,10 @@ for (i,v) in enumerate(VARS)
     ϕ[v] = shap_list_points(prf, Xp, X, idx, i, 50)
 end
 
-V = VARS[4]
+W = sum.([abs.(pdf.(ϕ[v], true)) for v in VARS])
+W ./= sum(W)
+
+V = VARS[1]
 D = layerdescriptions(provider)[string(V)]
 vx = Xp[:,V]
 vy = pdf.(ϕ[V], true)
@@ -127,31 +127,33 @@ sure_mask.grid[findall(!isnothing, nopredict.grid)] .= nothing
 
 frange = maximum(abs.(extrema(vy))) .* (-1, 1)
 f = Figure()
-ax = Axis(f[2, 1], aspect=DataAspect(), title=D)
-gl = f[2, 2] = GridLayout()
-hs = Axis(gl[1, 2], xaxisposition=:top)
-hu = Axis(gl[2, 2])
-es = Axis(gl[1, 1], xaxisposition=:top)
-eu = Axis(gl[2, 1])
+gl = f[1, 1] = GridLayout()
+spl = Axis(gl[2, 1], xaxisposition=:bottom, xlabel=D)
+phs = Axis(gl[1, 1])
+ehs = Axis(gl[2, 2])
+gl2 = gl[1,2] = GridLayout()
+ax = Axis(gl2[1, 1], aspect=DataAspect())
 heatmap!(ax, pred, colormap=[bgc, bgc])
-hm = heatmap!(ax, expl, colormap=:berlin, colorrange=frange)
-Colorbar(f[1, 1], hm; vertical=false)
-hist!(hs, mask(sure_mask, expl), color=:black, bins=40, direction=:x)
-hist!(hu, mask(unsure_mask, expl), color=:grey, bins=40, direction=:x)
-scatter!(es, mask(sure_mask, expvar), mask(sure_mask, expl), color=:black, markersize=2, transparency=0.5)
-scatter!(eu, mask(unsure_mask, expvar), mask(unsure_mask, expl), color=:grey, markersize=2, transparency=0.5)
-for hax in [es, eu, hs, hu]
+hm = heatmap!(ax, expl, colormap=:managua, colorrange=frange)
+Colorbar(gl2[1, 2], hm; vertical=true, height=Relative(0.82))
+density!(ehs, mask(unsure_mask, expl), color=(:grey, 0.2), direction=:y, strokecolor = :grey, strokewidth = 1, strokearound = true)
+density!(ehs, mask(sure_mask, expl), color=(:black, 0.5), direction=:y, strokecolor = :black, strokewidth = 1, strokearound = true)
+density!(phs, mask(unsure_mask, expvar), color=(:grey, 0.2), direction=:x, strokecolor = :grey, strokewidth = 1, strokearound = true)
+density!(phs, mask(sure_mask, expvar), color=(:black, 0.5), direction=:x, strokecolor = :black, strokewidth = 1, strokearound = true)
+scatter!(spl, mask(unsure_mask, expvar), mask(unsure_mask, expl), color=:grey, markersize=1, transparency=0.5)
+scatter!(spl, mask(sure_mask, expvar), mask(sure_mask, expl), color=:black, markersize=2, transparency=0.5)
+for hax in [spl, phs, ehs]
     tightlimits!(hax)
-    ylims!(hax, frange...)
 end
-hidedecorations!(hs)
-hidedecorations!(hu)
-hidespines!(hs)
-hidespines!(hu)
-linkxaxes!(es, eu)
+hidedecorations!(ax)
+hidedecorations!(ehs)
+hidedecorations!(phs)
+hidespines!(ehs)
+hidespines!(phs)
+linkxaxes!(spl, phs)
+linkyaxes!(spl, ehs)
 colgap!(gl, 0)
 rowgap!(gl, 0)
-colsize!(f.layout, 1, Relative(0.45))
-rowsize!(f.layout, 1, Relative(0.01))
-colsize!(gl, 1, Relative(0.85))
+colsize!(gl, 1, Relative(0.6))
+rowsize!(gl, 2, Relative(0.6))
 current_figure()
