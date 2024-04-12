@@ -2,8 +2,6 @@ include("_getdata.jl")
 
 using MLJ
 using ConformalPrediction
-using Shapley
-using Shapley.ComputationalResources
 using CairoMakie
 CairoMakie.activate!(; px_per_unit=2)
 
@@ -18,6 +16,36 @@ models(matching(X, y))
 Tree = @load EvoTreeClassifier pkg = EvoTrees
 tree = Tree(nbins=128, max_depth=6)
 
+# Forward variable selection for the BRT
+# This uses MCC on a 70/30 split
+pool = collect(1:size(X, 2))
+retained_variables = eltype(pool)[]
+mcc_to_beat = -Inf
+improved = true
+train, test = partition(1:size(X, 1), 0.7; shuffle=true)
+while improved
+    improved = false
+    mcc_this_round = zeros(Float64, length(pool))
+    for (i,v) in enumerate(pool)
+        thissel = [retained_variables..., pool[i]]
+        thismach = machine(tree, X[train,thissel], y[train])
+        fit!(thismach; verbosity=0)
+        mcc_this_round[i] = matthews_correlation(predict_mode(thismach, X[test,thissel]), y[test])
+        @info "\t Adding variable $(pool[i]) - MCC: $(mcc_this_round[i])"
+    end
+    if maximum(mcc_this_round) >= mcc_to_beat
+        improved = true
+        mcc_to_beat, selvar = findmax(mcc_this_round)
+        push!(retained_variables, popat!(pool, selvar))
+    end
+    @info "Retained $(length(retained_variables)) var with MCC $(mcc_to_beat)"
+end
+
+# Selected variables
+VARS = Symbol.("BIO" .* string.(retained_variables))
+X = X[:,VARS]
+Xp = select(Xf, Not([:latitude, :longitude]))[:,VARS]
+
 # Initial classifier
 mach = machine(tree, X, y)
 fit!(mach)
@@ -29,7 +57,7 @@ evaluate(tree, X, y,
 
 # Get some prediction going
 pred = similar(temperature)
-pred.grid[findall(!isnothing, pred.grid)] .= pdf.(predict(mach, select(Xf, Not([:longitude, :latitude]))), true)
+pred.grid[findall(!isnothing, pred.grid)] .= pdf.(predict(mach, Xp), true)
 heatmap(pred, colormap=:navia)
 
 # Conformal prediction with changing coverage
@@ -48,7 +76,7 @@ evaluate!(
 # Make the uncertainty prediction
 conformal = similar(temperature)
 nopredict = similar(temperature)
-conf_pred = predict(conf_mach, select(Xf, Not([:longitude, :latitude])))
+conf_pred = predict(conf_mach, Xp)
 conf_val = [ismissing(p) ? nothing : (pdf(p, true) == 0 ? nothing : pdf(p, true)) for p in conf_pred]
 conf_false = [ismissing(p) ? nothing : (pdf(p, false) == 0 ? nothing : pdf(p, false)) for p in conf_pred]
 
@@ -75,29 +103,38 @@ current_figure()
 include("_shapley.jl")
 idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
 prf = (x) -> predict(conf_mach, x)
-@time v19 = shap_list_points(prf, select(Xf, Not([:longitude, :latitude])), X, idx, 19, 50)
+ϕ = Dict()
+for (i,v) in enumerate(VARS)
+    @info "$(v) done"
+    ϕ[v] = shap_list_points(prf, Xp, X, idx, i, 50)
+end
+
+V = VARS[4]
+D = layerdescriptions(provider)[string(V)]
+vx = Xp[:,V]
+vy = pdf.(ϕ[V], true)
 
 expvar = similar(pred)
-expvar.grid[findall(!isnothing, expvar.grid)] .= Xf[:, 21]
+expvar.grid[findall(!isnothing, expvar.grid)] .= vx
 
 expl = similar(conformal)
-expl.grid[findall(!isnothing, expl.grid)] .= pdf.(v19, true)
+expl.grid[findall(!isnothing, expl.grid)] .= vy
 
 # Masks for the Shapley values
 unsure_mask = mask((conformal .> 0), (nopredict .> 0))
 sure_mask = conformal .> 0
 sure_mask.grid[findall(!isnothing, nopredict.grid)] .= nothing
 
-frange = (-0.6, 0.6)
+frange = maximum(abs.(extrema(vy))) .* (-1, 1)
 f = Figure()
-ax = Axis(f[2, 1])
+ax = Axis(f[2, 1], aspect=DataAspect(), title=D)
 gl = f[2, 2] = GridLayout()
 hs = Axis(gl[1, 2], xaxisposition=:top)
 hu = Axis(gl[2, 2])
 es = Axis(gl[1, 1], xaxisposition=:top)
 eu = Axis(gl[2, 1])
-heatmap!(ax, pred, colormap=[:lightgrey, :lightgrey])
-hm = heatmap!(ax, expl, colormap=:managua, colorrange=frange)
+heatmap!(ax, pred, colormap=[bgc, bgc])
+hm = heatmap!(ax, expl, colormap=:berlin, colorrange=frange)
 Colorbar(f[1, 1], hm; vertical=false)
 hist!(hs, mask(sure_mask, expl), color=:black, bins=40, direction=:x)
 hist!(hu, mask(unsure_mask, expl), color=:grey, bins=40, direction=:x)

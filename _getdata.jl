@@ -38,7 +38,7 @@ boundingbox = (
 
 # Data
 provider = RasterData(WorldClim2, BioClim)
-opts = (; resolution=2.5)
+opts = (; resolution=5.0)
 temperature = SimpleSDMPredictor(provider, layer=1; opts..., boundingbox...)
 precipitation = SimpleSDMPredictor(provider, layer=8; opts..., boundingbox...)
 
