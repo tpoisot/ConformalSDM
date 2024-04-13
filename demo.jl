@@ -20,7 +20,7 @@ tree = Tree(nbins=128, max_depth=6)
 # Forward variable selection for the BRT
 include("_forwardselection.jl")
 #retained_variables = forwardselection(tree, X, y; rng=12345)
-retained_variables = [19, 4, 10, ]
+retained_variables = [19, 4, 10, 12, 8, 18] # Hardcoding these in so they save time
 
 # Selected variables
 VARS = Symbol.("BIO" .* string.(retained_variables))
@@ -31,7 +31,7 @@ Xp = select(Xf, Not([:latitude, :longitude]))[:,VARS]
 mach = machine(tree, X, y)
 fit!(mach)
 evaluate(tree, X, y,
-    resampling=StratifiedCV(shuffle=true),
+    resampling=StratifiedCV(nfolds=10, shuffle=true; rng=12345),
     measures=[f1score, false_discovery_rate, balanced_accuracy, matthews_correlation],
     verbosity=0
 )
@@ -43,7 +43,7 @@ r = range(point_tree, :threshold, lower=0.1, upper=0.9)
 tuned_point_predictor = TunedModel(
     point_tree,
     tuning=LatinHypercube(rng=12345),
-    resampling=CV(nfolds=6; rng=12345),
+    resampling=StratifiedCV(nfolds=10, shuffle=true; rng=12345),
     range = r,
     measure=matthews_correlation,
     n=30,
