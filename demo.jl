@@ -38,7 +38,7 @@ mach = machine(tree, X, y)
 fit!(mach)
 evaluate(tree, X, y,
     resampling=StratifiedCV(nfolds=10, shuffle=true; rng=12345),
-    measures=[f1score, false_discovery_rate, balanced_accuracy, matthews_correlation],
+    measures=[f1score, false_positive_rate, false_negative_rate, true_positive_rate, true_negative_rate, balanced_accuracy, matthews_correlation],
     verbosity=0
 )
 
@@ -56,6 +56,12 @@ tuned_point_predictor = TunedModel(
 )
 tuned_mach = machine(tuned_point_predictor, X, y) |> fit!
 threshold = report(tuned_mach).best_model.threshold
+
+evaluate(report(tuned_mach).best_model, X, y,
+    resampling=StratifiedCV(nfolds=10, shuffle=true; rng=12345),
+    measures=[f1score, false_positive_rate, false_negative_rate, true_positive_rate, true_negative_rate, balanced_accuracy, matthews_correlation],
+    verbosity=0
+)
 
 # Get some prediction going
 pred = similar(temperature)
