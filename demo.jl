@@ -105,7 +105,7 @@ save("02_conformal_prediction.png", current_figure())
 # Level at which the pixel is included in the range
 coverage_effect = DataFrame(α=Float64[], sure=Float64[], total=Float64[], coverage=Float64[], ssc=Float64[], ineff=Float64[])
 surfacearea = cellsize(pred)
-for α in LinRange(0.0, 0.25, 50)
+for α in LinRange(0.0, 0.25, 20)
     partial_conf_model = conformal_model(tree; coverage=1 - α)
     partial_conf_mach = machine(partial_conf_model, X, y)
     fit!(partial_conf_mach)
