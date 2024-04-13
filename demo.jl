@@ -5,16 +5,22 @@ using ConformalPrediction
 using CairoMakie
 CairoMakie.activate!(; px_per_unit=2)
 
+# Background color for the maps - this is the color for NODATA
 bgc = colorant"#ecebe8ee"
 
 # Split the data to train a model
-schema(Xy)
-Xy.presence = coerce(Xy.presence, OrderedFactor)
+#schema(Xy) # Check the type of the different inputs
+Xy.presence = coerce(Xy.presence, OrderedFactor) # We turn the presence data into an ordered factor - false (absence) is the negative class
 
+# Split the training data into features y and instances X - the coordinates are removed at this step
 y, X = unpack(select(Xy, Not([:longitude, :latitude])), ==(:presence); rng=12345)
-#models(matching(X, y))
+#models(matching(X, y)) # Verify the list of currently known compatible models
 
+# The classifier we use is the EvoTreeClassifier, which is a BRT with some nice
+# shortcuts to fit the histogram
 Tree = @load EvoTreeClassifier pkg = EvoTrees
+
+# Our default BRT will use 128 bins for the variable histogram, and stop trees to a depth of 6 - this has not been very rigorously tested but the model performance is good enough that there is no obvious need to change it
 tree = Tree(nbins=128, max_depth=6)
 
 # Forward variable selection for the BRT
@@ -22,7 +28,7 @@ include("_forwardselection.jl")
 #retained_variables = forwardselection(tree, X, y; rng=12345)
 retained_variables = [19, 4, 10, 12, 8, 18] # Hardcoding these in so they save time
 
-# Selected variables
+# We cut the orignal data (as well as the training data) to just use the selected variables
 VARS = Symbol.("BIO" .* string.(retained_variables))
 X = X[:, VARS]
 Xp = select(Xf, Not([:latitude, :longitude]))[:, VARS]
@@ -150,22 +156,54 @@ unsure_mask = mask((conformal .> 0), (nopredict .> 0))
 sure_mask = conformal .> 0
 sure_mask.grid[findall(!isnothing, nopredict.grid)] .= nothing
 
-#pres = findall(isequal(true), Xy.presence)
-#scatter!(Xy.longitude[pres], Xy.latitude[pres], markersize=2, color=:teal)
-#current_figure()
-
+# Shapley values calculation
 include("_shapley.jl")
 idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
 prf = (x) -> predict(conf_mach, x)
 ϕ = Dict()
 for (i, v) in enumerate(VARS)
-    @info "$(v) done"
+    # This is a very long operation -- the Shapley code has been optimized somewhat but there is no alternative to making n predictions for each variable for each point, which scales up to hundreds of millions of model runs very rapidly
+    @info "Performing explanations for variable $(v)"
     ϕ[v] = shap_list_points(prf, Xp, X, idx, i, 50)
 end
 
+# Assess the importance of variables - this is only done for the pixels where the conformal model predicts the presence, either alone or as part of a set that also contains the absence
 W = sum.([abs.(pdf.(ϕ[v], true)) for v in VARS])
 W ./= sum(W)
 
+# Get the variable importance for the sure/unsure part of the range
+all_pos = findall(!isnothing, conformal)
+sure_pos = findall(!isnothing, sure_mask)
+unsure_pos = findall(!isnothing, unsure_mask)
+sure_idx = indexin(sure_pos, all_pos)
+unsure_idx = indexin(unsure_pos, all_pos)
+
+Ws = sum.([abs.(pdf.(ϕ[v][sure_idx], true)) for v in VARS])
+Ws ./= sum(Ws)
+
+Wu = sum.([abs.(pdf.(ϕ[v][unsure_idx], true)) for v in VARS])
+Wu ./= sum(Wu)
+
+f = Figure(resolution=(1200, 500))
+ax1 = Axis(f[1,1], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Range")
+barplot!(ax1, W, color=:grey)
+ax2 = Axis(f[1,2], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Certain")
+barplot!(ax2, Ws, color=:grey)
+ax3 = Axis(f[1,3], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Uncertain")
+barplot!(ax3, Wu, color=:grey)
+for ax in [ax2, ax3]
+    scatter!(ax, W, color=:black, markersize=15)
+end
+linkyaxes!(ax2, ax1)
+linkyaxes!(ax2, ax3)
+for ax in [ax2, ax3, ax1]
+    ylims!(ax, low=0.0)
+    xlims!(ax, 0, length(VARS)+1)
+end
+current_figure()
+save("04_variable_global_importance.png", current_figure())
+
+# Plot the explanations for the most important variable
 V = VARS[1]
 D = layerdescriptions(provider)[string(V)]
 vx = Xp[:, V]
@@ -178,9 +216,9 @@ expl = similar(conformal)
 expl.grid[findall(!isnothing, expl.grid)] .= vy
 
 frange = maximum(abs.(extrema(vy))) .* (-1, 1)
-f = Figure()
+f = Figure(resolution=(1200, 500))
 gl = f[1, 1] = GridLayout()
-spl = Axis(gl[2, 1], xaxisposition=:bottom, xlabel=D)
+spl = Axis(gl[2, 1], xaxisposition=:bottom, xlabel=D, ylabel="Effect on average prediction")
 phs = Axis(gl[1, 1])
 ehs = Axis(gl[2, 2])
 gl2 = gl[1, 2] = GridLayout()
@@ -207,5 +245,6 @@ linkyaxes!(spl, ehs)
 colgap!(gl, 0)
 rowgap!(gl, 0)
 colsize!(gl, 1, Relative(0.6))
-rowsize!(gl, 2, Relative(0.6))
+rowsize!(gl, 2, Relative(0.5))
 current_figure()
+save("05_local_importance.png", current_figure())
