@@ -11,34 +11,16 @@ bgc = colorant"#ecebe8ee"
 schema(Xy)
 Xy.presence = coerce(Xy.presence, OrderedFactor)
 
-y, X = unpack(select(Xy, Not([:longitude, :latitude])), ==(:presence); rng=420)
-
-models(matching(X, y))
+y, X = unpack(select(Xy, Not([:longitude, :latitude])), ==(:presence); rng=12345)
+#models(matching(X, y))
 
 Tree = @load EvoTreeClassifier pkg = EvoTrees
 tree = Tree(nbins=128, max_depth=6)
 
 # Forward variable selection for the BRT
-pool = collect(1:size(X, 2))
-retained_variables = eltype(pool)[]
-mcc_to_beat = -Inf
-improved = true
-while improved
-    improved = false
-    mcc_this_round = zeros(Float64, length(pool))
-    for (i,v) in enumerate(pool)
-        thissel = [retained_variables..., pool[i]]
-        ev = evaluate(tree, X[:,thissel], y; verbosity=0,resampling=CV(nfolds=10, shuffle=true, rng=12345),measures=[matthews_correlation])
-        mcc_this_round[i] = first(ev.measurement)
-        @info "\t Adding variable $(pool[i]) - MCC: $(mcc_this_round[i])"
-    end
-    if maximum(mcc_this_round) >= mcc_to_beat
-        improved = true
-        mcc_to_beat, selvar = findmax(mcc_this_round)
-        push!(retained_variables, popat!(pool, selvar))
-    end
-    @info "Retained $(length(retained_variables)) var with MCC $(mcc_to_beat)"
-end
+include("_forwardselection.jl")
+#retained_variables = forwardselection(tree, X, y; rng=12345)
+retained_variables = [19, 4, 10, ]
 
 # Selected variables
 VARS = Symbol.("BIO" .* string.(retained_variables))
@@ -49,7 +31,7 @@ Xp = select(Xf, Not([:latitude, :longitude]))[:,VARS]
 mach = machine(tree, X, y)
 fit!(mach)
 evaluate(tree, X, y,
-    resampling=CV(shuffle=true),
+    resampling=StratifiedCV(shuffle=true),
     measures=[f1score, false_discovery_rate, balanced_accuracy, matthews_correlation],
     verbosity=0
 )
@@ -93,7 +75,7 @@ fit!(conf_mach)
 
 evaluate!(
     conf_mach,
-    resampling=CV(nfolds=10, shuffle=true; rng=12345),
+    resampling=StratifiedCV(nfolds=10, shuffle=true; rng=12345),
     operation=predict,
     measure=[emp_coverage, ineff, size_stratified_coverage]
 )
