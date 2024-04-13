@@ -60,7 +60,7 @@ point_mach = machine(point_tree, X, y) |> fit!
 r = range(point_tree, :threshold, lower=0.1, upper=0.9)
 tuned_point_predictor = TunedModel(
     point_tree,
-    tuning=RandomSearch(rng=12345),
+    tuning=LatinHypercube(rng=12345),
     resampling=CV(nfolds=6; rng=12345),
     range = r,
     measure=matthews_correlation,
@@ -68,7 +68,6 @@ tuned_point_predictor = TunedModel(
 )
 tuned_mach = machine(tuned_point_predictor, X, y) |> fit!
 threshold = report(tuned_mach).best_model.threshold
-
 
 # Get some prediction going
 pred = similar(temperature)
@@ -84,6 +83,7 @@ ax2 = Axis(f[2, 2], aspect=DataAspect())
 heatmap!(ax2, pred, colormap=[bgc, bgc])
 heatmap!(ax2, distrib, colormap=[:transparent, :black])
 current_figure()
+save("01_brt_prediction.png", current_figure())
 
 # Conformal prediction with a specific coverage rate
 α = 0.05
@@ -118,6 +118,7 @@ heatmap!(ax2, pred, colormap=[bgc, bgc])
 heatmap!(ax2, conformal, colormap=[:black, :black])
 heatmap!(ax2, mask((conformal .> 0), (nopredict .> 0)), colormap=[:grey, :grey])
 current_figure()
+save("02_conformal_prediction.png", current_figure())
 
 # Level at which the pixel is included in the range
 included_at = similar(pred)
@@ -153,6 +154,7 @@ Colorbar(f[1, 1], hm; vertical=false, minorticksvisible=true, width=Relative(3.7
 heatmap!(ax2, pred, colormap=[bgc, bgc])
 heatmap!(ax2, included_at, colormap=:glasgow, colorrange=(0.0, 0.12))
 current_figure()
+save("03_pixel_inclusion.png", current_figure())
 
 # Masks for the Shapley values
 unsure_mask = mask((conformal .> 0), (nopredict .> 0))
