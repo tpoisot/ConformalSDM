@@ -161,7 +161,6 @@ unsure_mask = mask((conformal .> 0), (nopredict .> 0))
 sure_mask = conformal .> 0
 sure_mask.grid[findall(!isnothing, nopredict.grid)] .= nothing
 
-
 #pres = findall(isequal(true), Xy.presence)
 #scatter!(Xy.longitude[pres], Xy.latitude[pres], markersize=2, color=:teal)
 #current_figure()
