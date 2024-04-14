@@ -255,35 +255,43 @@ expl = similar(pred)
 expl.grid[findall(!isnothing, expl.grid)] .= vy
 
 frange = maximum(abs.(extrema(vy))) .* (-1, 1)
+
 fig_shapley = Figure(resolution=(1200, 500))
 gl = fig_shapley[1, 1] = GridLayout()
+legcol = [ColorSchemes.get(rangecolor, x, extrema(conforange)) for x in sort(unique(values(conforange)))]
+leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
+
 spl = Axis(gl[2, 1], xaxisposition=:bottom, xlabel=D, ylabel="Effect on average prediction")
 phs = Axis(gl[1, 1])
 ehs = Axis(gl[2, 2])
-gl2 = gl[1, 2] = GridLayout()
-ax = Axis(gl2[1, 1], aspect=DataAspect())
-heatmap!(ax, pred, colormap=[bgc, bgc])
-hm = heatmap!(ax, expl, colormap=effectcolor, colorrange=frange)
-Colorbar(gl2[1, 2], hm; vertical=true, height=Relative(0.82))
-density!(ehs, mask(unsure_mask, expl), color=(:grey, 0.2), direction=:y, strokecolor=:grey, strokewidth=1, strokearound=true)
-density!(ehs, mask(sure_mask, expl), color=(:black, 0.5), direction=:y, strokecolor=:black, strokewidth=1, strokearound=true)
-density!(phs, mask(unsure_mask, expvar), color=(:grey, 0.2), direction=:x, strokecolor=:grey, strokewidth=1, strokearound=true)
-density!(phs, mask(sure_mask, expvar), color=(:black, 0.5), direction=:x, strokecolor=:black, strokewidth=1, strokearound=true)
-scatter!(spl, mask(unsure_mask, expvar), mask(unsure_mask, expl), color=:grey, markersize=1, transparency=0.5)
-scatter!(spl, mask(sure_mask, expvar), mask(sure_mask, expl), color=:black, markersize=2, transparency=0.5)
+legbox = [PolyElement(color = c, strokecolor = :black, strokewidth=1) for c in legcol]
+Legend(gl[1,2], legbox, leglab; orientation = :horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=2, framevisible=false)
+
+density!(ehs, mask(sure_absence_mask, expl), color=(legcol[1], 0.8), direction=:y, strokecolor=:grey, strokewidth=1, strokearound=true)
+density!(ehs, mask(unsure_absence_mask, expl), color=(legcol[2], 0.8), direction=:y, strokecolor=:grey, strokewidth=1, strokearound=true)
+density!(ehs, mask(unsure_presence_mask, expl), color=(legcol[3], 0.8), direction=:y, strokecolor=:grey, strokewidth=1, strokearound=true)
+density!(ehs, mask(sure_presence_mask, expl), color=(legcol[4], 0.8), direction=:y, strokecolor=:grey, strokewidth=1, strokearound=true)
+
+density!(phs, mask(sure_absence_mask, expl), color=(legcol[1], 0.8), direction=:x, strokecolor=:grey, strokewidth=1, strokearound=true)
+density!(phs, mask(unsure_absence_mask, expl), color=(legcol[2], 0.8), direction=:x, strokecolor=:grey, strokewidth=1, strokearound=true)
+density!(phs, mask(unsure_presence_mask, expl), color=(legcol[3], 0.8), direction=:x, strokecolor=:grey, strokewidth=1, strokearound=true)
+density!(phs, mask(sure_presence_mask, expl), color=(legcol[4], 0.8), direction=:x, strokecolor=:grey, strokewidth=1, strokearound=true)
+
+scatter!(spl, mask(sure_absence_mask, expvar), mask(sure_absence_mask, expl), color=legcol[1], markersize=3, transparency=0.5)
+scatter!(spl, mask(unsure_absence_mask, expvar), mask(unsure_absence_mask, expl), color=legcol[2], markersize=3, transparency=0.5)
+scatter!(spl, mask(unsure_presence_mask, expvar), mask(unsure_presence_mask, expl), color=legcol[3], markersize=3, transparency=0.5)
+scatter!(spl, mask(sure_presence_mask, expvar), mask(sure_presence_mask, expl), color=legcol[4], markersize=3, transparency=0.5)
+
 for hax in [spl, phs, ehs]
     tightlimits!(hax)
 end
-hidedecorations!(ax)
 hidedecorations!(ehs)
 hidedecorations!(phs)
 hidespines!(ehs)
 hidespines!(phs)
-linkxaxes!(spl, phs)
-linkyaxes!(spl, ehs)
 colgap!(gl, 0)
 rowgap!(gl, 0)
-colsize!(gl, 1, Relative(0.6))
-rowsize!(gl, 2, Relative(0.5))
+colsize!(gl, 1, Relative(0.7))
+rowsize!(gl, 2, Relative(0.7))
 current_figure()
 save("05_local_importance.png", current_figure())
