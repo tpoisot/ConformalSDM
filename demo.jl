@@ -9,7 +9,7 @@ CairoMakie.activate!(; px_per_unit=2)
 # Some info on color for the entire figures
 mapbg = colorant"#ecebe8ee"
 probacolor = ColorSchemes.navia
-rangecolor = ColorSchemes.ColorScheme(reverse(ColorSchemes.oleron.colors))
+rangecolor = ColorSchemes.ColorScheme(reverse(ColorSchemes.acton.colors))
 effectcolor = ColorSchemes.managua
 
 # Split the data to train a model
