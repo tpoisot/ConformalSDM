@@ -9,7 +9,7 @@ CairoMakie.activate!(; px_per_unit=2)
 # Some info on color for the entire figures
 mapbg = colorant"#ecebe8ee"
 probacolor = ColorSchemes.navia
-rangecolor = ColorSchemes.ColorScheme(reverse(ColorSchemes.acton.colors))
+rangecolor = ColorSchemes.ColorScheme(reverse(ColorSchemes.batlowW.colors)[15:end])
 effectcolor = ColorSchemes.managua
 
 # Split the data to train a model
@@ -108,7 +108,6 @@ conf_pred = predict(conf_mach, Xp)
 conf_true = [ismissing(p) ? nothing : (pdf(p, true) == 0 ? nothing : pdf(p, true)) for p in conf_pred]
 conf_false = [ismissing(p) ? nothing : (pdf(p, false) == 0 ? nothing : pdf(p, false)) for p in conf_pred]
 conf_either = [any(isnothing.([conf_true[i], conf_false[i]])) ? nothing : true for i in eachindex(conf_true)]
-
 conformal.grid[findall(!isnothing, conformal.grid)] .= conf_true
 
 conforange.grid[confindex[findall(!isnothing, conf_true)]] .= 3
@@ -135,7 +134,7 @@ current_figure()
 save("02_conformal_prediction.png", current_figure())
 
 # Level at which the pixel is included in the range
-coverage_effect = DataFrame(α=Float64[], sure=Float64[], total=Float64[], coverage=Float64[], ssc=Float64[], ineff=Float64[])
+coverage_effect = DataFrame(α=Float64[], sure_presence=Float64[], unsure_presence=Float64[], unsure_absence=Float64[], sure_absence=Float64[], coverage=Float64[], ssc=Float64[], ineff=Float64[])
 surfacearea = cellsize(pred)
 for α in LinRange(0.0, 0.25, 20)
     partial_conf_model = conformal_model(tree; coverage=1 - α)
@@ -148,27 +147,43 @@ for α in LinRange(0.0, 0.25, 20)
         measure=[emp_coverage, size_stratified_coverage, ineff]
     )
     partial_conf_pred = predict(partial_conf_mach, Xp)
-    partial_conf_val = [ismissing(p) ? nothing : (pdf(p, true) == 0 ? nothing : pdf(p, true)) for p in partial_conf_pred]
+    partial_conf_true = [ismissing(p) ? nothing : (pdf(p, true) == 0 ? nothing : pdf(p, true)) for p in partial_conf_pred]
     partial_conf_false = [ismissing(p) ? nothing : (pdf(p, false) == 0 ? nothing : pdf(p, false)) for p in partial_conf_pred]
-    # Pixels that are true only
-    sure_pixels = setdiff(findall(!isnothing, partial_conf_val), findall(!isnothing, partial_conf_false))
-    unsure_pixels = findall(!isnothing, partial_conf_val)
+    partial_conf_either = [any(isnothing.([partial_conf_true[i], partial_conf_false[i]])) ? nothing : true for i in eachindex(partial_conf_true)]
+    # Make a map
+    partial_conforange = similar(pred)
+    partial_conforange.grid[confindex[findall(!isnothing, partial_conf_true)]] .= 3
+    partial_conforange.grid[confindex[findall(!isnothing, partial_conf_false)]] .= 0
+    # Split between things in/out of BRT range
+    partial_conforange.grid[confindex[findall(!isnothing, partial_conf_either)]] .= 1
+    partial_inrange = keys(mask(distrib, mask(partial_conforange .== 1, partial_conforange)))
+    for ir in partial_inrange
+        partial_conforange[ir] = 2
+    end
     # Sure/unsure pixels update
-    s = !isempty(sure_pixels) ? sum(surfacearea.grid[findall(!isnothing, surfacearea.grid)[sure_pixels]]) : 0.0
-    u = !isempty(unsure_pixels) ? sum(surfacearea.grid[findall(!isnothing, surfacearea.grid)[unsure_pixels]]) : 0.0
-    push!(coverage_effect, (α, s, u, evl.measurement[1], evl.measurement[2], evl.measurement[3]))
+    spr = count(isequal(3), partial_conforange.grid) == 0 ? 0.0 : sum(mask(partial_conforange .== 3, surfacearea))
+    upr = count(isequal(2), partial_conforange.grid) == 0 ? 0.0 : sum(mask(partial_conforange .== 2, surfacearea))
+    uab = count(isequal(1), partial_conforange.grid) == 0 ? 0.0 : sum(mask(partial_conforange .== 1, surfacearea))
+    sab = count(isequal(0), partial_conforange.grid) == 0 ? 0.0 : sum(mask(partial_conforange .== 0, surfacearea))
+    push!(coverage_effect, (α, spr, upr, uab, sab, evl.measurement[1], evl.measurement[2], evl.measurement[3]))
 end
 
+coverage_effect.total = coverage_effect.sure_presence .+ coverage_effect.unsure_presence .+ coverage_effect.unsure_absence
+
 fig_risk = Figure(resolution=(1200, 500))
+legcol = [ColorSchemes.get(rangecolor, x, extrema(conforange)) for x in sort(unique(values(conforange)))]
+leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
 ax_area = Axis(fig_risk[1:2, 1], yscale=sqrt, ylabel="Area (km²)", xlabel="Risk level (α)")
 ax_cov = Axis(fig_risk[2, 2], ylabel="Coverage", xlabel="Risk level (α)",yaxisposition=:right)
 ax_ineff = Axis(fig_risk[1, 2], ylabel="Inefficiency", xlabel=" ",yaxisposition=:right, xaxisposition=:top)
-scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.total, label="Total range", color=:grey, linestyle=:dash)
-scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.sure, label="Certain range", color=:black)
+lines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.total , label="Total range", color=:lightgrey)
+scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.unsure_absence, label=leglab[2], color=:grey, markercolor=legcol[2], strokecolor=:black, strokewidth=1, linestyle=:dot, marker=:dtriangle)
+scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.unsure_presence, label=leglab[3], color=:grey, markercolor=legcol[3], strokecolor=:black, strokewidth=1, linestyle=:dot, marker=:utriangle)
+scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.sure_presence, label=leglab[4], color=:grey, markercolor=legcol[4], strokecolor=:black, strokewidth=1, linestyle=:dot)
 scatterlines!(ax_cov, coverage_effect.α, coverage_effect.coverage, label="Empirical", color=:black)
 scatterlines!(ax_cov, coverage_effect.α, coverage_effect.ssc, label="Size stratified", color=:black, marker=:utriangle)
 scatterlines!(ax_ineff, coverage_effect.α, coverage_effect.ineff, color=:black)
-axislegend(ax_area)
+axislegend(ax_area, nbanks=2)
 axislegend(ax_cov)
 linkxaxes!(ax_area, ax_cov)
 linkxaxes!(ax_area, ax_ineff)
@@ -212,27 +227,29 @@ Wupr ./= sum(Wupr)
 Wuab ./= sum(Wuab)
 Wsab ./= sum(Wsab)
 
+vord = sortperm(Wall, rev=true)
+
 fig_global = Figure(resolution=(1200, 500))
 legcol = [ColorSchemes.get(rangecolor, x, extrema(conforange)) for x in sort(unique(values(conforange)))]
 leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
-ax_all = Axis(fig_global[1,3], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="All predictions")
-barplot!(ax_all, Wall, color=:white, strokecolor=:black, strokewidth=1)
+ax_all = Axis(fig_global[1,3], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="All predictions")
+barplot!(ax_all, Wall[vord], color=:lightgrey, strokecolor=:black, strokewidth=1)
 
-ax_spr = Axis(fig_global[1,1], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Sure presences")
-barplot!(ax_spr, Wspr, color=legcol[4], strokecolor=:black, strokewidth=1)
-ax_sab = Axis(fig_global[2,1], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Sure absences")
-barplot!(ax_sab, Wsab, color=legcol[1], strokecolor=:black, strokewidth=1)
+ax_spr = Axis(fig_global[1,1], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="Sure presences")
+barplot!(ax_spr, Wspr[vord], color=legcol[4], strokecolor=:black, strokewidth=1)
+ax_sab = Axis(fig_global[2,1], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="Sure absences")
+barplot!(ax_sab, Wsab[vord], color=legcol[1], strokecolor=:black, strokewidth=1)
 
-ax_upr = Axis(fig_global[1,2], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Uncertain presences")
-barplot!(ax_upr, Wupr, color=legcol[3], strokecolor=:black, strokewidth=1)
-ax_uab = Axis(fig_global[2,2], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Uncertain absences")
-barplot!(ax_uab, Wuab, color=legcol[2], strokecolor=:black, strokewidth=1)
+ax_upr = Axis(fig_global[1,2], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="Uncertain presences")
+barplot!(ax_upr, Wupr[vord], color=legcol[3], strokecolor=:black, strokewidth=1)
+ax_uab = Axis(fig_global[2,2], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="Uncertain absences")
+barplot!(ax_uab, Wuab[vord], color=legcol[2], strokecolor=:black, strokewidth=1)
 
 legbox = [PolyElement(color = c, strokecolor = :black, strokewidth=1) for c in legcol]
 Legend(fig_global[2,3], legbox, leglab; orientation = :horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=2, framevisible=false)
 
 for ax in [ax_spr, ax_upr, ax_uab, ax_sab]
-    scatter!(ax, Wall, color=:red, markersize=15, marker=:star4)
+    scatterlines!(ax, Wall[vord], color=:red, markersize=15, marker=:hline, linestyle=:dot)
     linkyaxes!(ax_all, ax)
     linkxaxes!(ax_all, ax)
     ylims!(ax, low=0.0)
