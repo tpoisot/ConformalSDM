@@ -9,7 +9,7 @@ CairoMakie.activate!(; px_per_unit=2)
 # Some info on color for the entire figures
 mapbg = colorant"#ecebe8ee"
 probacolor = ColorSchemes.navia
-rangecolor = ColorSchemes.ColorScheme(reverse(ColorSchemes.bukavu.colors))
+rangecolor = ColorSchemes.ColorScheme(reverse(ColorSchemes.oleron.colors))
 effectcolor = ColorSchemes.managua
 
 # Split the data to train a model
@@ -120,7 +120,6 @@ for ir in inrange
     conforange[ir] = 2
 end
 
-
 fig_conformal = Figure(resolution=(1200, 500))
 ax_confpred = Axis(fig_conformal[2, 1], aspect=DataAspect())
 ax_confrange = Axis(fig_conformal[2, 2], aspect=DataAspect())
@@ -178,55 +177,68 @@ tightlimits!(ax_ineff)
 current_figure()
 save("03_coverage_effect.png", current_figure())
 
-# Masks for the Shapley values
-unsure_mask = mask((conformal .> 0), (nopredict .> 0))
-sure_mask = conformal .> 0
-sure_mask.grid[findall(!isnothing, nopredict.grid)] .= nothing
+# Masks for the Shapley values based on certainty on the conformal predictor
+sure_presence_mask = conforange .== 3
+unsure_presence_mask = conforange .== 2
+unsure_absence_mask = conforange .== 1
+sure_absence_mask = conforange .== 0
 
 # Shapley values calculation
 include("_shapley.jl")
-idx = [i for i in 1:size(Xf, 1) if !isnothing(conformal[Xf.longitude[i], Xf.latitude[i]])]
+idx = [i for i in 1:size(Xf, 1) if !isnothing(pred[Xf.longitude[i], Xf.latitude[i]])]
 prf = (x) -> predict(conf_mach, x)
 ϕ = Dict()
 for (i, v) in enumerate(VARS)
-    # This is a very long operation -- the Shapley code has been optimized somewhat but there is no alternative to making n predictions for each variable for each point, which scales up to hundreds of millions of model runs very rapidly
     @info "Performing explanations for variable $(v)"
     ϕ[v] = shap_list_points(prf, Xp, X, idx, i, 50)
 end
 
-# Assess the importance of variables - this is only done for the pixels where the conformal model predicts the presence, either alone or as part of a set that also contains the absence
-W = sum.([abs.(pdf.(ϕ[v], true)) for v in VARS])
-W ./= sum(W)
-
-# Get the variable importance for the sure/unsure part of the range
-all_pos = findall(!isnothing, conformal)
-sure_pos = findall(!isnothing, sure_mask)
-unsure_pos = findall(!isnothing, unsure_mask)
-sure_idx = indexin(sure_pos, all_pos)
-unsure_idx = indexin(unsure_pos, all_pos)
-
-Ws = sum.([abs.(pdf.(ϕ[v][sure_idx], true)) for v in VARS])
-Ws ./= sum(Ws)
-
-Wu = sum.([abs.(pdf.(ϕ[v][unsure_idx], true)) for v in VARS])
-Wu ./= sum(Wu)
-
-f = Figure(resolution=(1200, 500))
-ax1 = Axis(f[1,1], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Range")
-barplot!(ax1, W, color=:grey)
-ax2 = Axis(f[1,2], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Certain")
-barplot!(ax2, Ws, color=:grey)
-ax3 = Axis(f[1,3], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Uncertain")
-barplot!(ax3, Wu, color=:grey)
-for ax in [ax2, ax3]
-    scatter!(ax, W, color=:black, markersize=15)
+# Shapley layers
+positions = findall(!isnothing, sure_presence_mask.grid)
+ψ = [similar(temperature) for _ in eachindex(VARS)]
+for (i, v) in enumerate(VARS)
+    ψ[i].grid[positions] .= pdf.(ϕ[v], true)
 end
-linkyaxes!(ax2, ax1)
-linkyaxes!(ax2, ax3)
-for ax in [ax2, ax3, ax1]
+
+Wall = [sum(abs.(ψ[i])) for i in eachindex(VARS)]
+Wspr = [sum(abs.(mask(sure_presence_mask, ψ[i]))) for i in eachindex(VARS)]
+Wupr = [sum(abs.(mask(unsure_presence_mask, ψ[i]))) for i in eachindex(VARS)]
+Wuab = [sum(abs.(mask(unsure_absence_mask, ψ[i]))) for i in eachindex(VARS)]
+Wsab = [sum(abs.(mask(sure_absence_mask, ψ[i]))) for i in eachindex(VARS)]
+
+Wall ./= sum(Wall)
+Wspr ./= sum(Wspr)
+Wupr ./= sum(Wupr)
+Wuab ./= sum(Wuab)
+Wsab ./= sum(Wsab)
+
+fig_global = Figure(resolution=(1200, 500))
+legcol = [ColorSchemes.get(rangecolor, x, extrema(conforange)) for x in sort(unique(values(conforange)))]
+leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
+ax_all = Axis(fig_global[1,3], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="All predictions")
+barplot!(ax_all, Wall, color=:white, strokecolor=:black, strokewidth=1)
+
+ax_spr = Axis(fig_global[1,1], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Sure presences")
+barplot!(ax_spr, Wspr, color=legcol[4], strokecolor=:black, strokewidth=1)
+ax_sab = Axis(fig_global[2,1], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Sure absences")
+barplot!(ax_sab, Wsab, color=legcol[1], strokecolor=:black, strokewidth=1)
+
+ax_upr = Axis(fig_global[1,2], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Uncertain presences")
+barplot!(ax_upr, Wupr, color=legcol[3], strokecolor=:black, strokewidth=1)
+ax_uab = Axis(fig_global[2,2], xticks= (1:length(VARS), string.(VARS)), xticklabelrotation=π/4, title="Uncertain absences")
+barplot!(ax_uab, Wuab, color=legcol[2], strokecolor=:black, strokewidth=1)
+
+legbox = [PolyElement(color = c, strokecolor = :black, strokewidth=1) for c in legcol]
+Legend(fig_global[2,3], legbox, leglab; orientation = :horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=2, framevisible=false)
+
+for ax in [ax_spr, ax_upr, ax_uab, ax_sab]
+    scatter!(ax, Wall, color=:red, markersize=15, marker=:star4)
+    linkyaxes!(ax_all, ax)
+    linkxaxes!(ax_all, ax)
     ylims!(ax, low=0.0)
-    xlims!(ax, 0, length(VARS)+1)
 end
+ylims!(ax_all, low=0.0)
+xlims!(ax_all, 0, length(VARS)+1)
 current_figure()
 save("04_variable_global_importance.png", current_figure())
 
@@ -239,19 +251,19 @@ vy = pdf.(ϕ[V], true)
 expvar = similar(pred)
 expvar.grid[findall(!isnothing, expvar.grid)] .= vx
 
-expl = similar(conformal)
+expl = similar(pred)
 expl.grid[findall(!isnothing, expl.grid)] .= vy
 
 frange = maximum(abs.(extrema(vy))) .* (-1, 1)
-f = Figure(resolution=(1200, 500))
-gl = f[1, 1] = GridLayout()
+fig_shapley = Figure(resolution=(1200, 500))
+gl = fig_shapley[1, 1] = GridLayout()
 spl = Axis(gl[2, 1], xaxisposition=:bottom, xlabel=D, ylabel="Effect on average prediction")
 phs = Axis(gl[1, 1])
 ehs = Axis(gl[2, 2])
 gl2 = gl[1, 2] = GridLayout()
 ax = Axis(gl2[1, 1], aspect=DataAspect())
 heatmap!(ax, pred, colormap=[bgc, bgc])
-hm = heatmap!(ax, expl, colormap=:managua, colorrange=frange)
+hm = heatmap!(ax, expl, colormap=effectcolor, colorrange=frange)
 Colorbar(gl2[1, 2], hm; vertical=true, height=Relative(0.82))
 density!(ehs, mask(unsure_mask, expl), color=(:grey, 0.2), direction=:y, strokecolor=:grey, strokewidth=1, strokearound=true)
 density!(ehs, mask(sure_mask, expl), color=(:black, 0.5), direction=:y, strokecolor=:black, strokewidth=1, strokearound=true)
