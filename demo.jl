@@ -30,7 +30,7 @@ tree = Tree(nbins=128, max_depth=6)
 # Forward variable selection for the BRT
 include("_forwardselection.jl")
 #retained_variables = forwardselection(tree, X, y; rng=12345)
-retained_variables = [19, 4, 10, 12, 8, 18] # Hardcoding these in so they save time
+retained_variables = [19, 3, 5, 6] # Hardcoding these in so they save time
 
 # We cut the orignal data (as well as the training data) to just use the selected variables
 VARS = Symbol.("BIO" .* string.(retained_variables))
@@ -136,7 +136,7 @@ save("02_conformal_prediction.png", current_figure())
 # Level at which the pixel is included in the range
 coverage_effect = DataFrame(α=Float64[], sure_presence=Float64[], unsure_presence=Float64[], unsure_absence=Float64[], sure_absence=Float64[], coverage=Float64[], ssc=Float64[], ineff=Float64[])
 surfacearea = cellsize(pred)
-for α in LinRange(0.0, 0.25, 20)
+for α in LinRange(0.0, 0.25, 25)
     partial_conf_model = conformal_model(tree; coverage=1 - α)
     partial_conf_mach = machine(partial_conf_model, X, y)
     fit!(partial_conf_mach)
@@ -176,7 +176,7 @@ leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
 ax_area = Axis(fig_risk[1:2, 1], yscale=sqrt, ylabel="Area (km²)", xlabel="Risk level (α)")
 ax_cov = Axis(fig_risk[2, 2], ylabel="Coverage", xlabel="Risk level (α)",yaxisposition=:right)
 ax_ineff = Axis(fig_risk[1, 2], ylabel="Inefficiency", xlabel=" ",yaxisposition=:right, xaxisposition=:top)
-lines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.total , label="Total range", color=:lightgrey)
+lines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.total , label="Total range", color=:grey, linewidth=4)
 scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.unsure_absence, label=leglab[2], color=:grey, markercolor=legcol[2], strokecolor=:black, strokewidth=1, linestyle=:dot, marker=:dtriangle)
 scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.unsure_presence, label=leglab[3], color=:grey, markercolor=legcol[3], strokecolor=:black, strokewidth=1, linestyle=:dot, marker=:utriangle)
 scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.sure_presence, label=leglab[4], color=:grey, markercolor=legcol[4], strokecolor=:black, strokewidth=1, linestyle=:dot)
