@@ -251,7 +251,7 @@ legbox = [PolyElement(color = c, strokecolor = :black, strokewidth=1) for c in l
 Legend(fig_global[2,3], legbox, leglab; orientation = :horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=2, framevisible=false)
 
 for ax in [ax_spr, ax_upr, ax_uab, ax_sab]
-    scatterlines!(ax, Wall[vord], color=:red, markersize=15, marker=:hline, linestyle=:dot)
+    scatterlines!(ax, Wall[vord], color=:red, markersize=15, marker=:star4, linestyle=:dot)
     linkyaxes!(ax_all, ax)
     linkxaxes!(ax_all, ax)
     ylims!(ax, low=0.0)
