@@ -30,7 +30,7 @@ tree = Tree(nbins=128, max_depth=6)
 # Forward variable selection for the BRT
 include("_forwardselection.jl")
 #retained_variables = forwardselection(tree, X, y; rng=12345)
-retained_variables = [19, 3, 5, 6] # Hardcoding these in so they save time
+retained_variables = [19, 10, 4, 14, 16] # Hardcoding these in so they save time
 
 # We cut the orignal data (as well as the training data) to just use the selected variables
 VARS = Symbol.("BIO" .* string.(retained_variables))
@@ -170,12 +170,14 @@ end
 
 coverage_effect.total = coverage_effect.sure_presence .+ coverage_effect.unsure_presence .+ coverage_effect.unsure_absence
 
+
 fig_risk = Figure(resolution=(1200, 500))
 legcol = [ColorSchemes.get(rangecolor, x, extrema(conforange)) for x in sort(unique(values(conforange)))]
 leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
 ax_area = Axis(fig_risk[1:2, 1], yscale=sqrt, ylabel="Area (km²)", xlabel="Risk level (α)")
 ax_cov = Axis(fig_risk[2, 2], ylabel="Coverage", xlabel="Risk level (α)",yaxisposition=:right)
 ax_ineff = Axis(fig_risk[1, 2], ylabel="Inefficiency", xlabel=" ",yaxisposition=:right, xaxisposition=:top)
+hlines!(ax_area, [ 1e-3 * sum(mask(distrib, cellsize(distrib)))], color=:black, linewidth=2, linestyle=:dash, label="BRT range")
 lines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.total , label="Total range", color=:grey, linewidth=4)
 scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.unsure_absence, label=leglab[2], color=:grey, markercolor=legcol[2], strokecolor=:black, strokewidth=1, linestyle=:dot, marker=:dtriangle)
 scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.unsure_presence, label=leglab[3], color=:grey, markercolor=legcol[3], strokecolor=:black, strokewidth=1, linestyle=:dot, marker=:utriangle)
