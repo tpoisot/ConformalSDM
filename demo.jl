@@ -4,6 +4,7 @@ using MLJ
 using ConformalPrediction
 using ColorSchemes
 using CairoMakie
+using Statistics
 CairoMakie.activate!(; px_per_unit=2)
 
 # Some info on color for the entire figures
