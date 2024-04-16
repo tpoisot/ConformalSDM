@@ -9,6 +9,7 @@ CairoMakie.activate!(; px_per_unit=2)
 # Some info on color for the entire figures
 mapbg = colorant"#ecebe8ee"
 probacolor = ColorSchemes.navia
+varcolor = ColorSchemes.bamako
 rangecolor = ColorSchemes.ColorScheme(reverse(ColorSchemes.batlowW.colors)[15:end])
 effectcolor = ColorSchemes.managua
 
@@ -82,10 +83,28 @@ heatmap!(ax_range, pred, colormap=[mapbg, mapbg])
 heatmap!(ax_range, distrib, colormap=rangecolor)
 legcol = [ColorSchemes.get(rangecolor, x, extrema(distrib)) for x in sort(unique(values(distrib)))]
 leglab = ["absence", "presence"]
-legbox = [PolyElement(color = c, strokecolor = :black, strokewidth=1) for c in legcol]
-Legend(fig_brt[1,2], legbox, leglab; orientation = :horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=1, framevisible=false)
+legbox = [PolyElement(color=c, strokecolor=:black, strokewidth=1) for c in legcol]
+Legend(fig_brt[1, 2], legbox, leglab; orientation=:horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=1, framevisible=false)
 current_figure()
 save("01_brt_prediction.png", current_figure())
+
+# Bagging of thr BRT to get an estimate of uncertainty due to data sampling
+function getbag(n)
+    train = rand(1:n, n)
+    test = setdiff(1:n, train)
+    return (train, test)
+end
+bag = [getbag(size(X,1)) for _ in Base.OneTo(100)]
+evaluate(report(tuned_mach).best_model, X, y,
+    resampling=bag,
+    measures=[f1score, false_positive_rate, false_negative_rate, true_positive_rate, true_negative_rate, balanced_accuracy, matthews_correlation],
+    verbosity=0
+)
+
+ensemble = [fit!(machine(report(tuned_mach).best_model, X, y), rows=bag[i][1]) for i in 1:length(bag)]
+outcome = convert(Matrix{Bool}, hcat([predict(component, Xp) for component in ensemble]...))
+bsvar = similar(temperature)
+bsvar.grid[findall(!isnothing, bsvar.grid)] .= vec(var(outcome, dims=2))
 
 # Conformal prediction with a specific coverage rate
 α = 0.05
@@ -119,6 +138,32 @@ for ir in inrange
     conforange[ir] = 2
 end
 
+fig_variance = Figure(resolution=(1200, 500))
+ax_bagvar = Axis(fig_variance[2, 1], aspect=DataAspect())
+gl_varclass = fig_variance[2, 2] = GridLayout()
+ax_spr = Axis(gl_varclass[2,1])
+ax_upr = Axis(gl_varclass[2,2])
+ax_uab = Axis(gl_varclass[1,2])
+ax_sab = Axis(gl_varclass[1,1])
+hm = heatmap!(ax_bagvar, bsvar, colormap=varcolor, colorrange=extrema(bsvar))
+Colorbar(fig_variance[1, 1], hm; vertical=false, minorticksvisible=true, width=Relative(3.7 / 4))
+legcol = [ColorSchemes.get(rangecolor, x, extrema(conforange)) for x in sort(unique(values(conforange)))]
+leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
+legbox = [PolyElement(color=c, strokecolor=:black, strokewidth=1) for c in legcol]
+hist!(ax_sab, mask(conforange .== 0, bsvar), color=legcol[1], strokecolor=:grey, strokewidth=1, strokearound=true, bins=12)
+hist!(ax_uab, mask(conforange .== 1, bsvar), color=legcol[2], strokecolor=:grey, strokewidth=1, strokearound=true, bins=12)
+hist!(ax_upr, mask(conforange .== 2, bsvar), color=legcol[3], strokecolor=:grey, strokewidth=1, strokearound=true, bins=12)
+hist!(ax_spr, mask(conforange .== 3, bsvar), color=legcol[4], strokecolor=:grey, strokewidth=1, strokearound=true, bins=12)
+Legend(fig_variance[1, 2], legbox, leglab; orientation=:horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=1, framevisible=false)
+for ax in [ax_sab, ax_uab, ax_upr, ax_spr]
+    tightlimits!(ax)
+    hideydecorations!(ax)
+    hidespines!(ax)
+end
+current_figure()
+save("06_bagging_variance.png", current_figure())
+
+
 fig_conformal = Figure(resolution=(1200, 500))
 ax_confpred = Axis(fig_conformal[2, 1], aspect=DataAspect())
 ax_confrange = Axis(fig_conformal[2, 2], aspect=DataAspect())
@@ -128,10 +173,11 @@ Colorbar(fig_conformal[1, 1], hm; vertical=false, minorticksvisible=true, width=
 heatmap!(ax_confrange, conforange, colormap=rangecolor)
 legcol = [ColorSchemes.get(rangecolor, x, extrema(conforange)) for x in sort(unique(values(conforange)))]
 leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
-legbox = [PolyElement(color = c, strokecolor = :black, strokewidth=1) for c in legcol]
-Legend(fig_conformal[1,2], legbox, leglab; orientation = :horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=1, framevisible=false)
+legbox = [PolyElement(color=c, strokecolor=:black, strokewidth=1) for c in legcol]
+Legend(fig_conformal[1, 2], legbox, leglab; orientation=:horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=1, framevisible=false)
 current_figure()
 save("02_conformal_prediction.png", current_figure())
+
 
 # Level at which the pixel is included in the range
 coverage_effect = DataFrame(α=Float64[], sure_presence=Float64[], unsure_presence=Float64[], unsure_absence=Float64[], sure_absence=Float64[], coverage=Float64[], ssc=Float64[], ineff=Float64[])
@@ -170,15 +216,14 @@ end
 
 coverage_effect.total = coverage_effect.sure_presence .+ coverage_effect.unsure_presence .+ coverage_effect.unsure_absence
 
-
 fig_risk = Figure(resolution=(1200, 500))
 legcol = [ColorSchemes.get(rangecolor, x, extrema(conforange)) for x in sort(unique(values(conforange)))]
 leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
 ax_area = Axis(fig_risk[1:2, 1], yscale=sqrt, ylabel="Area (km²)", xlabel="Risk level (α)")
-ax_cov = Axis(fig_risk[2, 2], ylabel="Coverage", xlabel="Risk level (α)",yaxisposition=:right)
-ax_ineff = Axis(fig_risk[1, 2], ylabel="Inefficiency", xlabel=" ",yaxisposition=:right, xaxisposition=:top)
-hlines!(ax_area, [ 1e-3 * sum(mask(distrib, cellsize(distrib)))], color=:black, linewidth=2, linestyle=:dash, label="BRT range")
-lines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.total , label="Total range", color=:grey, linewidth=4)
+ax_cov = Axis(fig_risk[2, 2], ylabel="Coverage", xlabel="Risk level (α)", yaxisposition=:right)
+ax_ineff = Axis(fig_risk[1, 2], ylabel="Inefficiency", xlabel=" ", yaxisposition=:right, xaxisposition=:top)
+hlines!(ax_area, [1e-3 * sum(mask(distrib, cellsize(distrib)))], color=:black, linewidth=2, linestyle=:dash, label="BRT range")
+lines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.total, label="Total range", color=:grey, linewidth=4)
 scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.unsure_absence, label=leglab[2], color=:grey, markercolor=legcol[2], strokecolor=:black, strokewidth=1, linestyle=:dot, marker=:dtriangle)
 scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.unsure_presence, label=leglab[3], color=:grey, markercolor=legcol[3], strokecolor=:black, strokewidth=1, linestyle=:dot, marker=:utriangle)
 scatterlines!(ax_area, coverage_effect.α, 1e-3 .* coverage_effect.sure_presence, label=leglab[4], color=:grey, markercolor=legcol[4], strokecolor=:black, strokewidth=1, linestyle=:dot)
@@ -234,21 +279,21 @@ vord = sortperm(Wall, rev=true)
 fig_global = Figure(resolution=(1200, 500))
 legcol = [ColorSchemes.get(rangecolor, x, extrema(conforange)) for x in sort(unique(values(conforange)))]
 leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
-ax_all = Axis(fig_global[1,3], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="All predictions")
+ax_all = Axis(fig_global[1, 3], xticks=(1:length(VARS), string.(VARS[vord])), xticklabelrotation=π / 4, title="All predictions")
 barplot!(ax_all, Wall[vord], color=:lightgrey, strokecolor=:black, strokewidth=1)
 
-ax_spr = Axis(fig_global[1,1], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="Sure presences")
+ax_spr = Axis(fig_global[1, 1], xticks=(1:length(VARS), string.(VARS[vord])), xticklabelrotation=π / 4, title="Sure presences")
 barplot!(ax_spr, Wspr[vord], color=legcol[4], strokecolor=:black, strokewidth=1)
-ax_sab = Axis(fig_global[2,1], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="Sure absences")
+ax_sab = Axis(fig_global[2, 1], xticks=(1:length(VARS), string.(VARS[vord])), xticklabelrotation=π / 4, title="Sure absences")
 barplot!(ax_sab, Wsab[vord], color=legcol[1], strokecolor=:black, strokewidth=1)
 
-ax_upr = Axis(fig_global[1,2], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="Uncertain presences")
+ax_upr = Axis(fig_global[1, 2], xticks=(1:length(VARS), string.(VARS[vord])), xticklabelrotation=π / 4, title="Uncertain presences")
 barplot!(ax_upr, Wupr[vord], color=legcol[3], strokecolor=:black, strokewidth=1)
-ax_uab = Axis(fig_global[2,2], xticks= (1:length(VARS), string.(VARS[vord])), xticklabelrotation=π/4, title="Uncertain absences")
+ax_uab = Axis(fig_global[2, 2], xticks=(1:length(VARS), string.(VARS[vord])), xticklabelrotation=π / 4, title="Uncertain absences")
 barplot!(ax_uab, Wuab[vord], color=legcol[2], strokecolor=:black, strokewidth=1)
 
-legbox = [PolyElement(color = c, strokecolor = :black, strokewidth=1) for c in legcol]
-Legend(fig_global[2,3], legbox, leglab; orientation = :horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=2, framevisible=false)
+legbox = [PolyElement(color=c, strokecolor=:black, strokewidth=1) for c in legcol]
+Legend(fig_global[2, 3], legbox, leglab; orientation=:horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=2, framevisible=false)
 
 for ax in [ax_spr, ax_upr, ax_uab, ax_sab]
     scatterlines!(ax, Wall[vord], color=:red, markersize=15, marker=:star4, linestyle=:dot)
@@ -257,7 +302,7 @@ for ax in [ax_spr, ax_upr, ax_uab, ax_sab]
     ylims!(ax, low=0.0)
 end
 ylims!(ax_all, low=0.0)
-xlims!(ax_all, 0, length(VARS)+1)
+xlims!(ax_all, 0, length(VARS) + 1)
 current_figure()
 save("04_variable_global_importance.png", current_figure())
 
@@ -283,8 +328,8 @@ leglab = ["absence", "uncertain (out)", "uncertain (in)", "presence"]
 spl = Axis(gl[2, 1], xaxisposition=:bottom, xlabel=D, ylabel="Effect on average prediction")
 phs = Axis(gl[1, 1])
 ehs = Axis(gl[2, 2])
-legbox = [PolyElement(color = c, strokecolor = :black, strokewidth=1) for c in legcol]
-Legend(gl[1,2], legbox, leglab; orientation = :horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=2, framevisible=false)
+legbox = [PolyElement(color=c, strokecolor=:black, strokewidth=1) for c in legcol]
+Legend(gl[1, 2], legbox, leglab; orientation=:horizontal, tellheight=false, tellwidth=false, halign=:center, valign=:center, nbanks=2, framevisible=false)
 
 density!(ehs, mask(sure_absence_mask, expl), color=(legcol[1], 0.8), direction=:y, strokecolor=:grey, strokewidth=1, strokearound=true)
 density!(ehs, mask(unsure_absence_mask, expl), color=(legcol[2], 0.8), direction=:y, strokecolor=:grey, strokewidth=1, strokearound=true)
