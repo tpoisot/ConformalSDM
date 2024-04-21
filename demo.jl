@@ -164,7 +164,6 @@ end
 current_figure()
 save("06_bagging_variance.png", current_figure())
 
-
 fig_conformal = Figure(resolution=(1200, 500))
 ax_confpred = Axis(fig_conformal[2, 1], aspect=DataAspect())
 ax_confrange = Axis(fig_conformal[2, 2], aspect=DataAspect())
@@ -179,6 +178,27 @@ Legend(fig_conformal[1, 2], legbox, leglab; orientation=:horizontal, tellheight=
 current_figure()
 save("02_conformal_prediction.png", current_figure())
 
+# RCP projection to show uncertainty/novelty
+novelty = similar(temperature)
+for r in eachrow(fXf)
+    novelty[r.longitude, r.latitude] = any([!(minimum(Xy[!,n]) <= r[n] <= maximum(Xy[!,n])) for n in VARS])
+end
+
+fconformal = similar(temperature)
+fconforange = similar(temperature)
+fconf_pred = predict(conf_mach, select(fXf, VARS))
+for (i,pr) in enumerate(fconf_pred)
+    fconformal[fXf.longitude[i], fXf.latitude[i]] = pdf(pr, true)
+    fstat = 0
+    if (pdf(pr, true) > 0) & (pdf(pr, false) > 0)
+        fstat = 1
+    end
+    if (pdf(pr, true) > 0) & (pdf(pr, false) == 0)
+        fstat = 2
+    end
+    fconforange[fXf.longitude[i], fXf.latitude[i]] = fstat
+end
+# TODO : add the figure with gain/loss of range
 
 # Level at which the pixel is included in the range
 coverage_effect = DataFrame(α=Float64[], sure_presence=Float64[], unsure_presence=Float64[], unsure_absence=Float64[], sure_absence=Float64[], coverage=Float64[], ssc=Float64[], ineff=Float64[])

@@ -40,7 +40,6 @@ boundingbox = (
 provider = RasterData(WorldClim2, BioClim)
 opts = (; resolution=5.0)
 temperature = SimpleSDMPredictor(provider, layer=1; opts..., boundingbox...)
-precipitation = SimpleSDMPredictor(provider, layer=8; opts..., boundingbox...)
 
 # Presence layer
 presence_layer = similar(temperature, Bool)
@@ -76,3 +75,7 @@ Xf = dropmissing(reduce((x,y) -> leftjoin(x,y; on=[:latitude, :longitude]), dfs)
 
 # Get the training data
 Xy = dropmissing(leftjoin(y, Xf, on=[:longitude, :latitude]))
+
+# Get the future data
+fdfs = [rename(DataFrame(SimpleSDMPredictor(provider, Projection(SSP370, CanESM5), layer=i; opts..., boundingbox...)), :value => layers(provider)[i]) for i in 1:19]
+fXf = dropmissing(reduce((x,y) -> leftjoin(x,y; on=[:latitude, :longitude]), fdfs))
