@@ -5,6 +5,7 @@ using ConformalPrediction
 using ColorSchemes
 using CairoMakie
 using Statistics
+using HypothesisTests
 CairoMakie.activate!(; px_per_unit=2)
 
 # Some info on color for the entire figures
@@ -179,7 +180,8 @@ current_figure()
 save("02_conformal_prediction.png", current_figure())
 
 # RCP projection to show uncertainty/novelty
-novelty = similar(temperature)
+novelty = convert(Bool, similar(temperature))
+surfacearea = cellsize(pred)
 for r in eachrow(fXf)
     novelty[r.longitude, r.latitude] = any([!(minimum(Xy[!,n]) <= r[n] <= maximum(Xy[!,n])) for n in VARS])
 end
@@ -198,11 +200,19 @@ for (i,pr) in enumerate(fconf_pred)
     end
     fconforange[fXf.longitude[i], fXf.latitude[i]] = fstat
 end
-# TODO : add the figure with gain/loss of range
+
+# Surface area
+
+in_novl = [sum(mask(replace(mask(novelty, fconforange .== i), false => nothing), surfacearea)) for i in [0,1,2]]
+in_seen = [sum(mask(replace(mask(!novelty, fconforange .== i), false => nothing), surfacearea)) for i in [0,1,2]]
+
+in_novl ./= sum(in_novl)
+in_seen ./= sum(in_seen)
+
+OneSampleTTest(abs.(in_novl .- in_seen))
 
 # Level at which the pixel is included in the range
 coverage_effect = DataFrame(α=Float64[], sure_presence=Float64[], unsure_presence=Float64[], unsure_absence=Float64[], sure_absence=Float64[], coverage=Float64[], ssc=Float64[], ineff=Float64[])
-surfacearea = cellsize(pred)
 for α in LinRange(0.0, 0.25, 25)
     partial_conf_model = conformal_model(tree; coverage=1 - α)
     partial_conf_mach = machine(partial_conf_model, X, y)
