@@ -77,5 +77,5 @@ Xf = dropmissing(reduce((x,y) -> leftjoin(x,y; on=[:latitude, :longitude]), dfs)
 Xy = dropmissing(leftjoin(y, Xf, on=[:longitude, :latitude]))
 
 # Get the future data
-fdfs = [rename(DataFrame(SimpleSDMPredictor(provider, Projection(SSP370, CanESM5), layer=i; timespace=Dates.Year(2081) => Dates.Year(2100), opts..., boundingbox...)), :value => layers(provider)[i]) for i in 1:19]
+fdfs = [rename(DataFrame(SimpleSDMPredictor(provider, Projection(SSP370, CanESM5), layer=i; timespan=Dates.Year(2081) => Dates.Year(2100), opts..., boundingbox...)), :value => layers(provider)[i]) for i in 1:19]
 fXf = dropmissing(reduce((x,y) -> leftjoin(x,y; on=[:latitude, :longitude]), fdfs))
