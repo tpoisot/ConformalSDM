@@ -32,8 +32,11 @@ tree = Tree(nbins=128, max_depth=6)
 
 # Forward variable selection for the BRT
 include("_forwardselection.jl")
-#retained_variables = forwardselection(tree, X, y; rng=12345)
-retained_variables = [19, 10, 4, 14, 16] # Hardcoding these in so they save time
+retained_variables = forwardselection(tree, X, y; rng=12345)
+#retained_variables = [19, 10, 4, 14, 16] # Hardcoding these in so they save time
+open("VARIABLESELECTION","w") do io
+    show(io, retained_variables)
+end
 
 # We cut the orignal data (as well as the training data) to just use the selected variables
 VARS = Symbol.("BIO" .* string.(retained_variables))
@@ -43,11 +46,20 @@ Xp = select(Xf, Not([:latitude, :longitude]))[:, VARS]
 # Initial classifier
 mach = machine(tree, X, y)
 fit!(mach)
-evaluate(tree, X, y,
+evl_brt = evaluate(tree, X, y,
     resampling=StratifiedCV(nfolds=10, shuffle=true; rng=12345),
     measures=[f1score, false_positive_rate, false_negative_rate, true_positive_rate, true_negative_rate, balanced_accuracy, matthews_correlation],
     verbosity=0
 )
+
+# Save the BRT evaluation
+function evalsave(str, evl)
+    open(str,"w") do io
+        show(io, MIME("text/plain"), evl)
+    end
+    return nothing
+end
+evalsave("00_eval_brt.txt", evl_brt)
 
 # Also fit a thresholded model
 point_tree = BinaryThresholdPredictor(tree, threshold=0.5)
@@ -64,11 +76,12 @@ tuned_point_predictor = TunedModel(
 tuned_mach = machine(tuned_point_predictor, X, y) |> fit!
 threshold = report(tuned_mach).best_model.threshold
 
-evaluate(report(tuned_mach).best_model, X, y,
+evl_tun = evaluate(report(tuned_mach).best_model, X, y,
     resampling=StratifiedCV(nfolds=10, shuffle=true; rng=12345),
     measures=[f1score, false_positive_rate, false_negative_rate, true_positive_rate, true_negative_rate, balanced_accuracy, matthews_correlation],
     verbosity=0
 )
+evalsave("01_eval_tuned.txt", evl_tun)
 
 # Get some prediction going
 pred = similar(temperature)
@@ -97,11 +110,12 @@ function getbag(n)
     return (train, test)
 end
 bag = [getbag(size(X,1)) for _ in Base.OneTo(100)]
-evaluate(report(tuned_mach).best_model, X, y,
+evl_oob = evaluate(report(tuned_mach).best_model, X, y,
     resampling=bag,
     measures=[f1score, false_positive_rate, false_negative_rate, true_positive_rate, true_negative_rate, balanced_accuracy, matthews_correlation],
     verbosity=0
 )
+evalsave("02_eval_oob.txt", evl_oob)
 
 ensemble = [fit!(machine(report(tuned_mach).best_model, X, y), rows=bag[i][1]) for i in 1:length(bag)]
 outcome = convert(Matrix{Bool}, hcat([predict(component, Xp) for component in ensemble]...))
@@ -114,12 +128,14 @@ conf_model = conformal_model(tree; coverage=1 - α)
 conf_mach = machine(conf_model, X, y)
 fit!(conf_mach)
 
-evaluate!(
+evl_cnf = evaluate!(
     conf_mach,
     resampling=StratifiedCV(nfolds=10, shuffle=true; rng=12345),
     operation=predict,
-    measure=[emp_coverage, ineff, size_stratified_coverage]
+    measure=[emp_coverage, ineff, size_stratified_coverage],
+    verbosity = 0
 )
+evalsave("03_eval_conformal.txt", evl_cnf)
 
 # Make the uncertainty prediction
 conformal = similar(temperature)
@@ -203,13 +219,35 @@ end
 
 # Surface area
 
+in_current = [sum(mask(replace(conforange .== i, false => nothing), surfacearea)) for i in [0,1,2,3]]
+in_future = [sum(mask(replace(fconforange .== i, false => nothing), surfacearea)) for i in [0,1,2]]
 in_novl = [sum(mask(replace(mask(novelty, fconforange .== i), false => nothing), surfacearea)) for i in [0,1,2]]
 in_seen = [sum(mask(replace(mask(!novelty, fconforange .== i), false => nothing), surfacearea)) for i in [0,1,2]]
 
+in_current ./= sum(in_current)
+in_current = [in_current[1], sum(in_current[2:3]), in_current[4]]
+in_future ./= sum(in_future)
 in_novl ./= sum(in_novl)
 in_seen ./= sum(in_seen)
 
-OneSampleTTest(abs.(in_novl .- in_seen))
+open("05_rangesize.txt","w") do io
+    println(io, "current")
+    println(io,  in_current)
+    println(io, "")
+    println(io, "future")
+    println(io,  in_future)
+    println(io, "")
+    println(io, "novel")
+    println(io,  in_novl)
+    println(io, "not novel")
+    println(io,  in_seen)
+    println(io, "")
+    println(io, "test novel / seen")
+    show(io, OneSampleTTest(in_novl .- in_seen))
+    println(io, "")
+    println(io, "test current / future")
+    show(io, OneSampleTTest(in_current .- in_future))
+end
 
 # Level at which the pixel is included in the range
 coverage_effect = DataFrame(α=Float64[], sure_presence=Float64[], unsure_presence=Float64[], unsure_absence=Float64[], sure_absence=Float64[], coverage=Float64[], ssc=Float64[], ineff=Float64[])
