@@ -1,13 +1,13 @@
 current
-[0.6441333674184453, 0.27864316830848934, 0.07722346427306545]
+[0.7419914306473009, 0.15371993315602872, 0.10428863619667046]
 
 future
-[0.6883017904435222, 0.19430593521724387, 0.1173922743392339]
+[0.7852001057221598, 0.16009095546472338, 0.05470893881311687]
 
 novel
-[0.9685320802171002, 0.0010704859076059452, 0.03039743387529378]
+[0.8992241809547057, 0.08253471586731614, 0.01824110317797813]
 not novel
-[0.6646065106268804, 0.2106452397427678, 0.12474824963035178]
+[0.7498349923607668, 0.1841453948421259, 0.06601961279710733]
 
 test novel / seen
 One sample t-test
@@ -15,8 +15,8 @@ One sample t-test
 Population details:
     parameter of interest:   Mean
     value under h_0:         0
-    point estimate:          9.25186e-18
-    95% confidence interval: (-0.6693, 0.6693)
+    point estimate:          -1.38778e-17
+    95% confidence interval: (-0.3283, 0.3283)
 
 Test summary:
     outcome with 95% confidence: fail to reject h_0
@@ -24,9 +24,9 @@ Test summary:
 
 Details:
     number of observations:   3
-    t-statistic:              5.94743449183966e-17
+    t-statistic:              -1.81898812271851e-16
     degrees of freedom:       2
-    empirical standard error: 0.15556049505441777
+    empirical standard error: 0.07629399903433046
 
 test current / future
 One sample t-test
@@ -34,8 +34,8 @@ One sample t-test
 Population details:
     parameter of interest:   Mean
     value under h_0:         0
-    point estimate:          2.31296e-17
-    95% confidence interval: (-0.1815, 0.1815)
+    point estimate:          2.31296e-18
+    95% confidence interval: (-0.1161, 0.1161)
 
 Test summary:
     outcome with 95% confidence: fail to reject h_0
@@ -43,6 +43,6 @@ Test summary:
 
 Details:
     number of observations:   3
-    t-statistic:              5.482983126866459e-16
+    t-statistic:              8.574649644054556e-17
     degrees of freedom:       2
-    empirical standard error: 0.04218442007056857
+    empirical standard error: 0.02697445062655701
