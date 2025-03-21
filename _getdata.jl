@@ -2,6 +2,7 @@ import Downloads
 import CSV
 import Dates
 using SpeciesDistributionToolkit
+import SpeciesDistributionToolkit as SDT
 using DataFrames
 
 # Download the data if they don't exist
@@ -12,6 +13,19 @@ end
 # Function to convert dates
 bigdate = (s) -> Dates.Year(Dates.Date(s, Dates.dateformat"yyyy-mm-ddTH:M:SZ"))
 
+# Get the places
+polygons = [
+    SDT.gadm("USA", "Oregon"),
+    SDT.gadm("USA", "Washington"),
+    SDT.gadm("USA", "California")
+]
+bbox = SDT._reconcile(SDT.boundingbox.(polygons; padding=1.0))
+
+# Data
+provider = RasterData(WorldClim2, BioClim)
+opts = (; resolution=2.5)
+temperature = SDMLayer(provider, layer=1; opts..., bbox...)
+
 # Filter by class of observation, only after 2000
 sightings = CSV.File("data/occurrences.csv")
 occ = [
@@ -21,61 +35,89 @@ occ = [
     (record.classification == "Class A") &
     (bigdate(record.timestamp) >= Dates.Year(1900))
 ]
-filter!(r -> -90 <= r[2] <= 90, occ)
-filter!(r -> -180 <= r[1] <= 180, occ)
-
 # Spatial filter
-filter!(r -> 30 <= r[2] <= 52, occ)
-filter!(r -> -130 <= r[1] <= -100, occ)
+filter!(r -> bbox.bottom <= r[2] <= bbox.top, occ)
+filter!(r -> bbox.left <= r[1] <= bbox.right, occ)
 
-# Bounding box
-boundingbox = (
-    left=minimum(first.(occ)),
-    right=maximum(first.(occ)),
-    bottom=minimum(last.(occ)),
-    top=maximum(last.(occ)),
-)
+# Turn into occurrences
+presencedata = Occurrences([Occurrence("Bigfoot", true, (r[1], r[2]), missing) for r in occ])
 
-# Data
-provider = RasterData(WorldClim2, BioClim)
-opts = (; resolution=2.5)
-temperature = SimpleSDMPredictor(provider, layer=1; opts..., boundingbox...)
+# Get the mask for all polygons
+msks = [mask(temperature, p) for p in polygons]
+temperature.indices = reduce(.|, [m.indices for m in msks])
 
 # Presence layer
-presence_layer = similar(temperature, Bool)
-for i in axes(occ, 1)
-    if ~isnothing(presence_layer[occ[i]...])
-        presence_layer[occ[i]...] = true
-    end
-end
+presence_layer = mask(temperature, presencedata)
 
 # Background
-possible_background = pseudoabsencemask(DistanceToEvent, presence_layer) * cellsize(temperature)
+possible_background = pseudoabsencemask(DistanceToEvent, presence_layer)
 
 # Absence layer
 absence_layer = backgroundpoints(
-    (x -> x^1.1).(possible_background),
+    nodata(possible_background, r -> r <= 20.0),
     3sum(presence_layer);
     replace=false
 )
 
+# Sanity check
+f = Figure()
+ax = Axis(f[1,1], aspect=DataAspect())
+heatmap!(ax, temperature, colormap=:turbo)
+[lines!(ax, p; color=:black) for p in polygons]
+hidespines!(ax)
+hidedecorations!(ax)
+scatter!(ax, presence_layer, color=:white, strokecolor=:black, strokewidth=1, markersize=7)
+current_figure()
+
 # Cleanup
-replace!(absence_layer, false => nothing)
-replace!(absence_layer, true => false)
-replace!(presence_layer, false => nothing)
+nodata!(absence_layer, false)
+nodata!(presence_layer, false)
+absence_layer = !absence_layer
 
 y = vcat(
-    rename(DataFrame(presence_layer), :value => :presence),
-    rename(DataFrame(absence_layer), :value => :presence)
+    values(presence_layer),
+    values(absence_layer)
 )
 
-# Get the full data
-dfs = [rename(DataFrame(SimpleSDMPredictor(provider, layer=i; opts..., boundingbox...)), :value => layers(provider)[i]) for i in 1:19]
-Xf = dropmissing(reduce((x,y) -> leftjoin(x,y; on=[:latitude, :longitude]), dfs))
+# Get the layers
+L = [mask(SDMLayer(provider; layer=i, opts..., bbox...), temperature) for i in 1:19]
+lnames = layers(provider)
 
-# Get the training data
-Xy = dropmissing(leftjoin(y, Xf, on=[:longitude, :latitude]))
+tpls = []
+for k in keys(L[1])
+    pr = [presence_layer[k], absence_layer[k]]
+    prcode = all(isnothing, pr) ? Inf : something(pr...)
+    r = Dict(:latitude => northings(L[1])[k.I[1]], :longitude => eastings(L[1])[k.I[2]])
+    r[:presence] = prcode
+    for i in eachindex(lnames)
+        r[Symbol(lnames[i])] = L[i][k]
+    end
+    push!(tpls, r)
+end
+
+# Get the full data
+Xf = DataFrame(tpls)
+Xy = Xf[findall(!isinf, Xf.presence),:]
 
 # Get the future data
-fdfs = [rename(DataFrame(SimpleSDMPredictor(provider, Projection(SSP370, CanESM5), layer=i; timespan=Dates.Year(2081) => Dates.Year(2100), opts..., boundingbox...)), :value => layers(provider)[i]) for i in 1:19]
-fXf = dropmissing(reduce((x,y) -> leftjoin(x,y; on=[:latitude, :longitude]), fdfs))
+L = [SDMLayer(provider,Projection(SSP370, CanESM5); layer=i, timespan=Dates.Year(2081) => Dates.Year(2100), opts..., bbox...) for i in 1:19]
+for l in L
+    l.x = temperature.x
+    l.y = temperature.y
+end
+L = [mask(l, temperature) for l in L]
+
+tpls = []
+for k in keys(L[1])
+    pr = [presence_layer[k], absence_layer[k]]
+    prcode = all(isnothing, pr) ? Inf : something(pr...)
+    r = Dict(:latitude => northings(L[1])[k.I[1]], :longitude => eastings(L[1])[k.I[2]])
+    r[:presence] = prcode
+    for i in eachindex(lnames)
+        r[Symbol(lnames[i])] = L[i][k]
+    end
+    push!(tpls, r)
+end
+
+# Get the full data
+fXf = dropmissing(DataFrame(tpls))
