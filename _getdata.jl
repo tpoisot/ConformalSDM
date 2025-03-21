@@ -22,8 +22,8 @@ polygons = [
 bbox = SDT._reconcile(SDT.boundingbox.(polygons; padding=1.0))
 
 # Data
-provider = RasterData(WorldClim2, BioClim)
-opts = (; resolution=2.5)
+provider = RasterData(CHELSA2, BioClim)
+opts = (; )
 temperature = SDMLayer(provider, layer=1; opts..., bbox...)
 
 # Filter by class of observation, only after 2000
@@ -80,7 +80,12 @@ y = vcat(
 )
 
 # Get the layers
-L = [mask(SDMLayer(provider; layer=i, opts..., bbox...), temperature) for i in 1:19]
+L = [SDMLayer(provider; layer=i, opts..., bbox...) for i in 1:19]
+for l in L
+    l.x = temperature.x
+    l.y = temperature.y
+end
+L = [mask(l, temperature) for l in L]
 lnames = layers(provider)
 
 tpls = []
@@ -100,7 +105,7 @@ Xf = DataFrame(tpls)
 Xy = Xf[findall(!isinf, Xf.presence),:]
 
 # Get the future data
-L = [SDMLayer(provider,Projection(SSP370, CanESM5); layer=i, timespan=Dates.Year(2081) => Dates.Year(2100), opts..., bbox...) for i in 1:19]
+L = [SDMLayer(provider, Projection(SSP370, MRI_ESM2_0); layer=i, timespan=Dates.Year(2071) => Dates.Year(2100), opts..., bbox...) for i in 1:19]
 for l in L
     l.x = temperature.x
     l.y = temperature.y
