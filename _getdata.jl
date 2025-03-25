@@ -4,6 +4,7 @@ import Dates
 using SpeciesDistributionToolkit
 import SpeciesDistributionToolkit as SDT
 using DataFrames
+using CairoMakie
 
 # Download the data if they don't exist
 if ~isfile("data/occurrences.csv")

@@ -84,7 +84,7 @@ evl_tun = evaluate(report(tuned_mach).best_model, X, y,
 evalsave("01_eval_tuned.txt", evl_tun)
 
 # Get some prediction going
-pred = similar(temperature)
+pred = similar(temperature, Float32)
 pred.grid[findall(pred.indices)] .= pdf.(MLJ.predict(mach, Xp), true)
 distrib = pred .>= threshold
 
@@ -119,7 +119,7 @@ evalsave("02_eval_oob.txt", evl_oob)
 
 ensemble = [fit!(machine(report(tuned_mach).best_model, X, y), rows=bag[i][1]) for i in 1:length(bag)]
 outcome = convert(Matrix{Bool}, hcat([MLJ.predict(component, Xp) for component in ensemble]...))
-bsvar = similar(temperature)
+bsvar = similar(temperature, Float32)
 bsvar.grid[findall(bsvar.indices)] .= vec(var(outcome, dims=2))
 
 # Conformal prediction with a specific coverage rate
@@ -138,9 +138,9 @@ evl_cnf = evaluate!(
 evalsave("03_eval_conformal.txt", evl_cnf)
 
 # Make the uncertainty prediction
-conformal = zeros(temperature)
+conformal = zeros(temperature, Float32)
 confindex = findall(conformal.indices)
-conforange = similar(temperature)
+conforange = similar(temperature, Float32)
 conf_pred = MLJ.predict(conf_mach, Xp)
 conf_true = [ismissing(p) ? nothing : (pdf(p, true) == 0 ? nothing : pdf(p, true)) for p in conf_pred]
 conf_false = [ismissing(p) ? nothing : (pdf(p, false) == 0 ? nothing : pdf(p, false)) for p in conf_pred]
@@ -228,8 +228,8 @@ for r in eachrow(fXf)
     novelty[r.longitude, r.latitude] = any([!(minimum(Xy[!,n]) <= r[n] <= maximum(Xy[!,n])) for n in VARS])
 end
 
-fconformal = similar(temperature)
-fconforange = similar(temperature)
+fconformal = similar(temperature, Float32)
+fconforange = similar(temperature, Float32)
 fconf_pred = MLJ.predict(conf_mach, select(fXf, VARS))
 for (i,pr) in enumerate(fconf_pred)
     fconformal[fXf.longitude[i], fXf.latitude[i]] = pdf(pr, true)
@@ -352,7 +352,7 @@ end
 
 # Shapley layers
 positions = findall(sure_presence_mask.indices)
-ψ = [similar(temperature) for _ in eachindex(VARS)]
+ψ = [similar(temperature, Float32) for _ in eachindex(VARS)]
 for (i, v) in enumerate(VARS)
     ψ[i].grid[positions] .= pdf.(ϕ[v], true)
 end
